@@ -1,11 +1,12 @@
 {
-  "name": "manager-flex",
-  "version": "0.1.0",
+  "name": "leadshift",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "postbuild": "node scripts/prepare-standalone.mjs",
+    "start": "node .next/standalone/server.js",
     "lint": "eslint",
     "verify": "npm run lint && npm run build"
   },
@@ -22,8 +23,12 @@
     "eslint-config-next": "16.2.10",
     "typescript": "^5"
   },
-  "description": "Interactive situational management style simulator with archetypes and explainable scoring.",
+  "description": "Adaptive situational management laboratory with assessments, context recommendations, feedback comparison, journaling, and simulations.",
   "overrides": {
     "postcss": "8.5.10"
+  },
+  "engines": {
+    "node": ">=20.9.0",
+    "npm": ">=10.0.0"
   }
 }

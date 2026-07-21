@@ -12,7 +12,6 @@ export const DIMENSION_KEYS = [
 ] as const;
 
 export type DimensionKey = (typeof DIMENSION_KEYS)[number];
-
 export type ManagementProfile = Record<DimensionKey, number>;
 
 export type SituationCategory =
@@ -40,10 +39,7 @@ export interface Archetype {
   description: string;
   strengths: string[];
   watchouts: string[];
-  center: Pick<
-    ManagementProfile,
-    "focus" | "authority" | "operatingMode" | "change"
-  >;
+  center: Pick<ManagementProfile, "focus" | "authority" | "operatingMode" | "change">;
 }
 
 export interface Situation {
@@ -76,9 +72,110 @@ export interface ProfileWarning {
   severity: "note" | "watch";
 }
 
+export type ProfileKind = "natural" | "working" | "recommended" | "context";
+
 export interface SavedMode {
   id: string;
   name: string;
   profile: ManagementProfile;
   createdAt: string;
+  kind?: ProfileKind;
+  context?: string;
+}
+
+export const CONTEXT_KEYS = [
+  "experience",
+  "confidence",
+  "trust",
+  "urgency",
+  "failureConsequence",
+  "uncertainty",
+  "reversibility",
+  "innovation",
+] as const;
+
+export type ContextKey = (typeof CONTEXT_KEYS)[number];
+export type SituationContext = Record<ContextKey, number>;
+
+export interface ContextDefinition {
+  key: ContextKey;
+  name: string;
+  lowLabel: string;
+  highLabel: string;
+  description: string;
+}
+
+export interface AssessmentOption {
+  id: string;
+  label: string;
+  rationale: string;
+  effects: Partial<Record<DimensionKey, number>>;
+}
+
+export interface AssessmentScenario {
+  id: string;
+  title: string;
+  prompt: string;
+  options: AssessmentOption[];
+}
+
+export interface StyleSnapshot {
+  id: string;
+  label: string;
+  profile: ManagementProfile;
+  createdAt: string;
+  note?: string;
+}
+
+export interface TeamPerceptionResponse {
+  id: string;
+  relationship: string;
+  profile: ManagementProfile;
+  createdAt: string;
+}
+
+export interface ContextProfile {
+  id: string;
+  name: string;
+  description: string;
+  profile: ManagementProfile;
+  createdAt: string;
+}
+
+export interface JournalEntry {
+  id: string;
+  createdAt: string;
+  situation: string;
+  chosenStyle: string;
+  intendedOutcome: string;
+  actualOutcome: string;
+  reflection: string;
+  profile: ManagementProfile;
+}
+
+export interface SimulatorChoice {
+  id: string;
+  label: string;
+  response: string;
+  effects: {
+    trust: number;
+    clarity: number;
+    accountability: number;
+    delivery: number;
+  };
+  nextNodeId?: string;
+}
+
+export interface SimulatorNode {
+  id: string;
+  prompt: string;
+  choices: SimulatorChoice[];
+}
+
+export interface SimulatorScenario {
+  id: string;
+  title: string;
+  description: string;
+  startNodeId: string;
+  nodes: SimulatorNode[];
 }

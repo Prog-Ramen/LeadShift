@@ -1,70 +1,73 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ARCHETYPES } from "@/data/archetypes";
-import {
-  DEFAULT_PROFILE,
-  DIMENSIONS,
-  PRESET_PROFILES,
-} from "@/data/dimensions";
-import {
-  SITUATIONS,
-  SITUATION_CATEGORIES,
-} from "@/data/situations";
+import { ProfileSliders } from "@/components/ProfileSliders";
+import { ProfileSummary } from "@/components/ProfileSummary";
+import { ASSESSMENT_SCENARIOS } from "@/data/assessment";
+import { CONTEXT_DEFINITIONS, DEFAULT_CONTEXT } from "@/data/context";
+import { DEFAULT_PROFILE, DIMENSIONS, PRESET_PROFILES } from "@/data/dimensions";
+import { SIMULATOR_SCENARIOS } from "@/data/simulator";
+import { SITUATIONS } from "@/data/situations";
 import {
   clamp,
-  describeBand,
-  getAdjustmentRecommendations,
-  getArchetypeMatches,
+  getAssessmentProfile,
+  getBehaviorRecommendations,
+  getContextRecommendedProfile,
+  getConversationExample,
+  getHistoryInsight,
+  getJournalInsight,
   getMarginalImpacts,
+  getOvercorrectionWarnings,
+  getPerceptionGaps,
   getProfileWarnings,
+  getStyleShiftInsight,
   rankSituations,
+  getTeamPerceptionAverage,
   scoreSituation,
+  type ConversationTone,
 } from "@/lib/engine";
 import type {
+  ContextProfile,
   DimensionKey,
+  JournalEntry,
   ManagementProfile,
-  SavedMode,
-  SituationCategory,
+  SimulatorChoice,
+  StyleSnapshot,
+  SituationContext,
+  TeamPerceptionResponse,
 } from "@/lib/types";
-import { DIMENSION_KEYS } from "@/lib/types";
-import { RadarChart } from "@/components/RadarChart";
 
-const STORAGE_KEY = "manager-flex:saved-modes:v1";
-const PROFILE_QUERY_KEY = "style";
+const STORAGE_KEY = "leadshift:workspace:v2";
+const TABS = [
+  ["styles", "Style lab"],
+  ["assessment", "Assessment"],
+  ["context", "Situation builder"],
+  ["history", "History"],
+  ["team", "Team view"],
+  ["journal", "Decision journal"],
+  ["simulator", "Simulator"],
+] as const;
 
-const Icon = ({ name }: { name: "reset" | "share" | "save" | "trash" | "spark" | "arrow" }) => {
-  const paths = {
-    reset: <><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/></>,
-    share: <><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4"/></>,
-    save: <><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></>,
-    trash: <><path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6"/></>,
-    spark: <><path d="m12 3-1.4 3.6L7 8l3.6 1.4L12 13l1.4-3.6L17 8l-3.6-1.4L12 3Z"/><path d="m5 14-.8 2.2L2 17l2.2.8L5 20l.8-2.2L8 17l-2.2-.8L5 14ZM19 13l-.8 2.2L16 16l2.2.8L19 19l.8-2.2L22 16l-2.2-.8L19 13Z"/></>,
-    arrow: <><path d="M5 12h14M13 6l6 6-6 6"/></>,
-  };
+type TabId = (typeof TABS)[number][0];
 
-  return (
-    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {paths[name]}
-    </svg>
-  );
+type StoredWorkspace = {
+  naturalProfile: ManagementProfile;
+  workingProfile: ManagementProfile;
+  context: SituationContext;
+  selectedSituationId: string;
+  snapshots: StyleSnapshot[];
+  perceptions: TeamPerceptionResponse[];
+  contextProfiles: ContextProfile[];
+  journal: JournalEntry[];
 };
 
-const encodeProfile = (profile: ManagementProfile) =>
-  DIMENSION_KEYS.map((key) => Math.round(profile[key])).join(".");
+const uid = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const decodeProfile = (encoded: string | null): ManagementProfile | null => {
-  if (!encoded) return null;
-  const values = encoded.split(".").map(Number);
-  if (values.length !== DIMENSION_KEYS.length || values.some((value) => !Number.isFinite(value))) {
-    return null;
-  }
-
-  return DIMENSION_KEYS.reduce((result, key, index) => {
-    result[key] = clamp(values[index]);
-    return result;
-  }, {} as ManagementProfile);
-};
+const formatDate = (date: string) =>
+  new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(date));
 
 const fitLabel = (score: number) => {
   if (score >= 86) return "Excellent fit";
@@ -74,484 +77,654 @@ const fitLabel = (score: number) => {
   return "High-friction fit";
 };
 
-const impactText = (impact: number) => {
-  if (impact > 0) return `+${impact}`;
-  return `${impact}`;
-};
+const scoreClass = (score: number) =>
+  score >= 72 ? "good" : score >= 52 ? "mid" : "low";
+
+function EmptyState({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="empty-state">
+      <strong>{title}</strong>
+      <p>{body}</p>
+    </div>
+  );
+}
 
 export default function ManagementLab() {
-  const [profile, setProfile] = useState<ManagementProfile>(DEFAULT_PROFILE);
+  const [activeTab, setActiveTab] = useState<TabId>("styles");
+  const [naturalProfile, setNaturalProfile] = useState<ManagementProfile>(DEFAULT_PROFILE);
+  const [workingProfile, setWorkingProfile] = useState<ManagementProfile>(DEFAULT_PROFILE);
   const [activeDimension, setActiveDimension] = useState<DimensionKey>("authority");
   const [selectedSituationId, setSelectedSituationId] = useState("senior-team");
-  const [category, setCategory] = useState<"All" | SituationCategory>("All");
-  const [savedModes, setSavedModes] = useState<SavedMode[]>([]);
-  const [modeName, setModeName] = useState("");
-  const [shareStatus, setShareStatus] = useState("Share profile");
+  const [context, setContext] = useState<SituationContext>(DEFAULT_CONTEXT);
+  const [assessmentAnswers, setAssessmentAnswers] = useState<Record<string, string>>({});
+  const [conversationTone, setConversationTone] = useState<ConversationTone>("collaborative");
+  const [snapshots, setSnapshots] = useState<StyleSnapshot[]>([]);
+  const [snapshotLabel, setSnapshotLabel] = useState("After 30 days");
+  const [snapshotNote, setSnapshotNote] = useState("");
+  const [perceptions, setPerceptions] = useState<TeamPerceptionResponse[]>([]);
+  const [perceptionDraft, setPerceptionDraft] = useState<ManagementProfile>(DEFAULT_PROFILE);
+  const [relationship, setRelationship] = useState("Team member");
+  const [contextProfiles, setContextProfiles] = useState<ContextProfile[]>([]);
+  const [contextProfileName, setContextProfileName] = useState("");
+  const [journal, setJournal] = useState<JournalEntry[]>([]);
+  const [journalForm, setJournalForm] = useState({
+    situation: "",
+    chosenStyle: "",
+    intendedOutcome: "",
+    actualOutcome: "",
+    reflection: "",
+  });
+  const [simulatorId, setSimulatorId] = useState(SIMULATOR_SCENARIOS[0].id);
+  const [simulatorNodeId, setSimulatorNodeId] = useState(SIMULATOR_SCENARIOS[0].startNodeId);
+  const [simulatorScores, setSimulatorScores] = useState({ trust: 50, clarity: 50, accountability: 50, delivery: 50 });
+  const [simulatorResponse, setSimulatorResponse] = useState("");
+  const [simulatorComplete, setSimulatorComplete] = useState(false);
+  const [shareStatus, setShareStatus] = useState("Share working style");
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const sharedProfile = decodeProfile(params.get(PROFILE_QUERY_KEY));
-    let storedModes: SavedMode[] = [];
-
+    let stored: Partial<StoredWorkspace> = {};
+    let sharedProfile: ManagementProfile | null = null;
     try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) storedModes = JSON.parse(stored) as SavedMode[];
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (raw) stored = JSON.parse(raw) as Partial<StoredWorkspace>;
+      const encoded = new URLSearchParams(window.location.search).get("style");
+      if (encoded) {
+        const values = encoded.split(".").map(Number);
+        if (values.length === DIMENSIONS.length && values.every(Number.isFinite)) {
+          sharedProfile = DIMENSIONS.reduce((profile, dimension, index) => {
+            profile[dimension.key] = clamp(values[index]);
+            return profile;
+          }, {} as ManagementProfile);
+        }
+      }
     } catch {
-      // A private browsing policy may block storage. The app still works without it.
+      // Local persistence and shared URLs are optional.
     }
 
     queueMicrotask(() => {
-      if (sharedProfile) setProfile(sharedProfile);
-      setSavedModes(storedModes);
+      if (stored.naturalProfile) setNaturalProfile(stored.naturalProfile);
+      if (sharedProfile) setWorkingProfile(sharedProfile);
+      else if (stored.workingProfile) setWorkingProfile(stored.workingProfile);
+      if (stored.context) setContext(stored.context);
+      if (stored.selectedSituationId) setSelectedSituationId(stored.selectedSituationId);
+      if (stored.snapshots) setSnapshots(stored.snapshots);
+      if (stored.perceptions) setPerceptions(stored.perceptions);
+      if (stored.contextProfiles) setContextProfiles(stored.contextProfiles);
+      if (stored.journal) setJournal(stored.journal);
       setHydrated(true);
     });
   }, []);
 
-  const archetypeMatches = useMemo(() => getArchetypeMatches(profile), [profile]);
-  const primaryMatch = archetypeMatches[0];
-  const secondaryMatch = archetypeMatches[1];
+  useEffect(() => {
+    if (!hydrated) return;
+    const workspace: StoredWorkspace = {
+      naturalProfile,
+      workingProfile,
+      context,
+      selectedSituationId,
+      snapshots,
+      perceptions,
+      contextProfiles,
+      journal,
+    };
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace));
+    } catch {
+      // Ignore blocked or full storage.
+    }
+  }, [
+    hydrated,
+    naturalProfile,
+    workingProfile,
+    context,
+    selectedSituationId,
+    snapshots,
+    perceptions,
+    contextProfiles,
+    journal,
+  ]);
+
   const selectedSituation =
-    SITUATIONS.find((item) => item.id === selectedSituationId) ?? SITUATIONS[0];
-  const selectedScore = useMemo(
-    () => scoreSituation(profile, selectedSituation),
-    [profile, selectedSituation],
+    SITUATIONS.find((situation) => situation.id === selectedSituationId) ?? SITUATIONS[0];
+  const recommendedProfile = useMemo(
+    () => getContextRecommendedProfile(context, selectedSituation),
+    [context, selectedSituation],
   );
-  const recommendations = useMemo(
-    () => getAdjustmentRecommendations(profile, selectedSituation, 4),
-    [profile, selectedSituation],
+  const currentFit = useMemo(
+    () => scoreSituation(workingProfile, { ...selectedSituation, ideal: recommendedProfile }),
+    [workingProfile, selectedSituation, recommendedProfile],
   );
+  const behaviorRecommendations = useMemo(
+    () => getBehaviorRecommendations(workingProfile, recommendedProfile, 4),
+    [workingProfile, recommendedProfile],
+  );
+  const overcorrectionWarnings = useMemo(
+    () => getOvercorrectionWarnings(naturalProfile, workingProfile, recommendedProfile),
+    [naturalProfile, workingProfile, recommendedProfile],
+  );
+  const profileWarnings = useMemo(() => getProfileWarnings(workingProfile), [workingProfile]);
+  const rankedSituations = useMemo(() => rankSituations(workingProfile, SITUATIONS), [workingProfile]);
   const marginalImpacts = useMemo(
-    () => getMarginalImpacts(profile, selectedSituation),
-    [profile, selectedSituation],
+    () => getMarginalImpacts(workingProfile, { ...selectedSituation, ideal: recommendedProfile }),
+    [workingProfile, selectedSituation, recommendedProfile],
   );
   const activeImpact = marginalImpacts.find((impact) => impact.key === activeDimension) ?? marginalImpacts[0];
-  const rankedSituations = useMemo(() => rankSituations(profile, SITUATIONS), [profile]);
-  const warnings = useMemo(() => getProfileWarnings(profile), [profile]);
-  const activeDefinition = DIMENSIONS.find((item) => item.key === activeDimension) ?? DIMENSIONS[0];
-  const filteredSituations = category === "All"
-    ? SITUATIONS
-    : SITUATIONS.filter((item) => item.category === category);
-
-  const updateProfile = (key: DimensionKey, value: number) => {
-    setProfile((current) => ({ ...current, [key]: clamp(value) }));
-    setActiveDimension(key);
-  };
-
-  const applyStep = (key: DimensionKey, delta: number) => {
-    updateProfile(key, profile[key] + delta);
-  };
-
-  const selectCategory = (nextCategory: "All" | SituationCategory) => {
-    setCategory(nextCategory);
-    const first = nextCategory === "All"
-      ? SITUATIONS[0]
-      : SITUATIONS.find((item) => item.category === nextCategory);
-    if (first) setSelectedSituationId(first.id);
-  };
+  const activeDefinition = DIMENSIONS.find((dimension) => dimension.key === activeDimension) ?? DIMENSIONS[0];
+  const teamAverage = useMemo(() => getTeamPerceptionAverage(perceptions), [perceptions]);
+  const perceptionGaps = useMemo(
+    () => (teamAverage ? getPerceptionGaps(workingProfile, teamAverage) : []),
+    [workingProfile, teamAverage],
+  );
+  const assessmentProfile = useMemo(
+    () => getAssessmentProfile(ASSESSMENT_SCENARIOS, assessmentAnswers, DEFAULT_PROFILE),
+    [assessmentAnswers],
+  );
+  const answeredAssessmentCount = Object.keys(assessmentAnswers).length;
+  const simulator =
+    SIMULATOR_SCENARIOS.find((scenario) => scenario.id === simulatorId) ?? SIMULATOR_SCENARIOS[0];
+  const simulatorNode = simulator.nodes.find((node) => node.id === simulatorNodeId);
 
   const shareProfile = async () => {
+    const encoded = DIMENSIONS.map((dimension) => Math.round(workingProfile[dimension.key])).join(".");
     const url = new URL(window.location.href);
-    url.searchParams.set(PROFILE_QUERY_KEY, encodeProfile(profile));
+    url.searchParams.set("style", encoded);
     try {
       await navigator.clipboard.writeText(url.toString());
       setShareStatus("Link copied");
     } catch {
       window.history.replaceState({}, "", url);
-      setShareStatus("Link added to URL");
+      setShareStatus("Added to URL");
     }
-    window.setTimeout(() => setShareStatus("Share profile"), 1800);
+    window.setTimeout(() => setShareStatus("Share working style"), 1800);
   };
 
-  const saveMode = () => {
-    const trimmedName = modeName.trim();
-    if (!trimmedName) return;
-
-    const mode: SavedMode = {
-      id: typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}`,
-      name: trimmedName,
-      profile: { ...profile },
-      createdAt: new Date().toISOString(),
-    };
-    const nextModes = [mode, ...savedModes].slice(0, 12);
-    setSavedModes(nextModes);
-    setModeName("");
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextModes));
-    } catch {
-      // Storage is optional.
-    }
+  const saveSnapshot = () => {
+    const label = snapshotLabel.trim();
+    if (!label) return;
+    setSnapshots((current) => [
+      ...current,
+      {
+        id: uid(),
+        label,
+        note: snapshotNote.trim() || undefined,
+        profile: { ...workingProfile },
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    setSnapshotNote("");
   };
 
-  const deleteMode = (id: string) => {
-    const nextModes = savedModes.filter((mode) => mode.id !== id);
-    setSavedModes(nextModes);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextModes));
-    } catch {
-      // Storage is optional.
-    }
+  const addPerception = () => {
+    setPerceptions((current) => [
+      ...current,
+      {
+        id: uid(),
+        relationship,
+        profile: { ...perceptionDraft },
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    setPerceptionDraft(DEFAULT_PROFILE);
   };
 
-  const codeMeanings = [
-    { letter: primaryMatch.archetype.code[0], label: profile.focus < 50 ? "Human-centred" : "Results-centred" },
-    { letter: primaryMatch.archetype.code[1], label: profile.authority < 50 ? "Autonomy" : "Direction" },
-    { letter: primaryMatch.archetype.code[2], label: profile.operatingMode < 50 ? "Stability" : "Exploration" },
-    { letter: primaryMatch.archetype.code[3], label: profile.change < 50 ? "Incremental" : "Transformational" },
-  ];
+  const saveContextProfile = () => {
+    const name = contextProfileName.trim();
+    if (!name) return;
+    setContextProfiles((current) => [
+      {
+        id: uid(),
+        name,
+        description: selectedSituation.title,
+        profile: { ...workingProfile },
+        createdAt: new Date().toISOString(),
+      },
+      ...current,
+    ]);
+    setContextProfileName("");
+  };
+
+  const addJournalEntry = () => {
+    if (!journalForm.situation.trim() || !journalForm.intendedOutcome.trim()) return;
+    setJournal((current) => [
+      {
+        id: uid(),
+        createdAt: new Date().toISOString(),
+        ...journalForm,
+        profile: { ...workingProfile },
+      },
+      ...current,
+    ]);
+    setJournalForm({ situation: "", chosenStyle: "", intendedOutcome: "", actualOutcome: "", reflection: "" });
+  };
+
+  const resetSimulator = (nextId = simulatorId) => {
+    const next = SIMULATOR_SCENARIOS.find((scenario) => scenario.id === nextId) ?? SIMULATOR_SCENARIOS[0];
+    setSimulatorId(next.id);
+    setSimulatorNodeId(next.startNodeId);
+    setSimulatorScores({ trust: 50, clarity: 50, accountability: 50, delivery: 50 });
+    setSimulatorResponse("");
+    setSimulatorComplete(false);
+  };
+
+  const chooseSimulatorOption = (choice: SimulatorChoice) => {
+    setSimulatorScores((current) => ({
+      trust: clamp(current.trust + choice.effects.trust),
+      clarity: clamp(current.clarity + choice.effects.clarity),
+      accountability: clamp(current.accountability + choice.effects.accountability),
+      delivery: clamp(current.delivery + choice.effects.delivery),
+    }));
+    setSimulatorResponse(choice.response);
+    if (choice.nextNodeId) {
+      setSimulatorNodeId(choice.nextNodeId);
+    } else {
+      setSimulatorComplete(true);
+    }
+  };
 
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a href="#top" className="brand" aria-label="Manager Flex home">
-          <span className="brand__mark">MF</span>
-          <span>
-            <strong>LeadShift</strong>
-            <small>Situational leadership laboratory</small>
-          </span>
+        <a href="#top" className="brand" aria-label="LeadShift home">
+          <span className="brand__mark">LS</span>
+          <span><strong>LeadShift</strong><small>Adaptive management laboratory</small></span>
         </a>
         <div className="topbar__actions">
-          <button className="button button--ghost" onClick={() => setProfile(DEFAULT_PROFILE)}>
-            <Icon name="reset" /> Reset
-          </button>
-          <button className="button button--primary" onClick={shareProfile}>
-            <Icon name="share" /> {shareStatus}
-          </button>
+          <button className="button button--ghost" onClick={() => setWorkingProfile({ ...naturalProfile })}>Reset to natural</button>
+          <button className="button button--primary" onClick={shareProfile}>{shareStatus}</button>
         </div>
       </header>
 
-      <main id="top">
-        <section className="hero">
+      <main id="top" className="product-main">
+        <section className="hero hero--product">
           <div>
-            <span className="eyebrow"><Icon name="spark" /> Management as a set of movable dials</span>
-            <h1>Explore how your style changes with the situation.</h1>
+            <span className="eyebrow">Know your default. Adapt with intent.</span>
+            <h1>Practice the judgment behind flexible management.</h1>
             <p>
-              Adjust ten independent leadership dimensions. See the archetype they form,
-              where that configuration helps, and which single change creates the greatest situational benefit.
+              Separate instinct from deliberate behavior, build a situation-specific recommendation,
+              compare team perception, and learn through recorded decisions and branching simulations.
             </p>
           </div>
           <div className="hero__principle">
-            <span>Current principle</span>
-            <strong>Known default + deliberate flexibility</strong>
-            <p>No configuration is universally ideal. The goal is to understand when and why to move.</p>
+            <span>Current insight</span>
+            <strong>{getStyleShiftInsight(naturalProfile, workingProfile)}</strong>
+            <p>{selectedSituation.title}: {fitLabel(currentFit.score)} at {currentFit.score}%.</p>
           </div>
         </section>
 
-        <section className="workspace">
-          <aside className="panel controls-panel">
-            <div className="panel__heading">
-              <div>
-                <span className="section-kicker">Style laboratory</span>
-                <h2>Management dials</h2>
-              </div>
-              <span className="count-badge">10 dimensions</span>
+        <nav className="product-tabs" aria-label="LeadShift sections">
+          {TABS.map(([id, label]) => (
+            <button key={id} className={activeTab === id ? "product-tab product-tab--active" : "product-tab"} onClick={() => setActiveTab(id)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        {activeTab === "styles" && (
+          <section className="tab-stack">
+            <div className="section-heading-row">
+              <div><span className="section-kicker">Three distinct profiles</span><h2>Instinct, deliberate style, and situational recommendation</h2></div>
+              <span className={`fit-badge fit-badge--${scoreClass(currentFit.score)}`}>{currentFit.score}% situation fit</span>
             </div>
 
-            <div className="preset-row" aria-label="Management style presets">
-              {PRESET_PROFILES.map((preset) => (
-                <button
-                  key={preset.name}
-                  className="preset-chip"
-                  title={preset.description}
-                  onClick={() => setProfile({ ...preset.profile })}
-                >
-                  {preset.name}
-                </button>
-              ))}
+            <div className="profile-comparison-grid">
+              <ProfileSummary
+                label="Instinctive style"
+                title="Natural default"
+                profile={naturalProfile}
+                action={<button className="text-button" onClick={() => setWorkingProfile({ ...naturalProfile })}>Use now</button>}
+              />
+              <ProfileSummary
+                label="Deliberate style"
+                title="Current working mode"
+                profile={workingProfile}
+                comparison={naturalProfile}
+                action={<button className="text-button" onClick={() => setNaturalProfile({ ...workingProfile })}>Make natural</button>}
+              />
+              <ProfileSummary
+                label="Situation model"
+                title="Recommended mode"
+                profile={recommendedProfile}
+                comparison={workingProfile}
+                action={<button className="text-button" onClick={() => setWorkingProfile({ ...recommendedProfile })}>Adopt</button>}
+              />
             </div>
 
-            <div className="slider-list">
-              {DIMENSIONS.map((dimension) => {
-                const value = profile[dimension.key];
-                const isActive = dimension.key === activeDimension;
-                return (
-                  <div
-                    className={`slider-card ${isActive ? "slider-card--active" : ""}`}
-                    key={dimension.key}
-                    onClick={() => setActiveDimension(dimension.key)}
-                  >
-                    <div className="slider-card__header">
-                      <label htmlFor={`slider-${dimension.key}`}>{dimension.name}</label>
-                      <span>{value}</span>
-                    </div>
-                    <input
-                      id={`slider-${dimension.key}`}
-                      type="range"
-                      min="0"
-                      max="100"
-                      step="1"
-                      value={value}
-                      style={{ "--slider-value": `${value}%` } as React.CSSProperties}
-                      onChange={(event) => updateProfile(dimension.key, Number(event.target.value))}
-                      aria-valuetext={`${value}; ${dimension.lowLabel} to ${dimension.highLabel}`}
-                    />
-                    <div className="slider-card__labels">
-                      <span>{dimension.lowLabel}</span>
-                      <strong>{describeBand(value)}</strong>
-                      <span>{dimension.highLabel}</span>
-                    </div>
+            <div className="two-column-layout">
+              <article className="panel">
+                <div className="panel__heading">
+                  <div><span className="section-kicker">Current working mode</span><h2>Adjust your chosen style</h2></div>
+                  <span className="count-badge">10 dimensions</span>
+                </div>
+                <div className="preset-row">
+                  {PRESET_PROFILES.map((preset) => (
+                    <button key={preset.name} className="preset-chip" title={preset.description} onClick={() => setWorkingProfile({ ...preset.profile })}>{preset.name}</button>
+                  ))}
+                </div>
+                <ProfileSliders profile={workingProfile} onChange={setWorkingProfile} activeDimension={activeDimension} onActiveDimensionChange={setActiveDimension} />
+              </article>
+
+              <div className="stacked-column">
+                <article className="panel">
+                  <div className="panel__heading">
+                    <div><span className="section-kicker">From numbers to behavior</span><h2>Highest-value actions</h2></div>
                   </div>
-                );
-              })}
-            </div>
-          </aside>
-
-          <section className="panel identity-panel">
-            <div className="panel__heading">
-              <div>
-                <span className="section-kicker">Current configuration</span>
-                <h2>Your archetype</h2>
-              </div>
-              <span className="confidence-badge">{primaryMatch.confidence}% match</span>
-            </div>
-
-            <div className="archetype-hero">
-              <div className="archetype-code" aria-label={`Archetype code ${primaryMatch.archetype.code}`}>
-                {codeMeanings.map((meaning) => (
-                  <div key={`${meaning.letter}-${meaning.label}`}>
-                    <strong>{meaning.letter}</strong>
-                    <span>{meaning.label}</span>
+                  <div className="action-list">
+                    {behaviorRecommendations.map((item) => (
+                      <article key={item.key} className="action-card">
+                        <span>{item.delta > 0 ? `+${Math.round(item.delta)}` : Math.round(item.delta)}</span>
+                        <div><strong>{item.dimensionName}: toward {item.targetLabel}</strong><p>{item.action}</p></div>
+                      </article>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <h3>{primaryMatch.archetype.name}</h3>
-              <p>{primaryMatch.archetype.description}</p>
-              <div className="secondary-match">
-                Secondary match: <strong>{secondaryMatch.archetype.name}</strong>
-                <span>{secondaryMatch.confidence}%</span>
-              </div>
-            </div>
-
-            <RadarChart profile={profile} />
-
-            <div className="traits-grid">
-              <div>
-                <span className="mini-heading">Likely strengths</span>
-                <ul className="trait-list trait-list--positive">
-                  {primaryMatch.archetype.strengths.map((strength) => <li key={strength}>{strength}</li>)}
-                </ul>
-              </div>
-              <div>
-                <span className="mini-heading">Watch closely</span>
-                <ul className="trait-list">
-                  {primaryMatch.archetype.watchouts.map((watchout) => <li key={watchout}>{watchout}</li>)}
-                </ul>
-              </div>
-            </div>
-
-            <div className="warning-stack">
-              {warnings.map((warning) => (
-                <article className={`warning-card warning-card--${warning.severity}`} key={warning.id}>
-                  <span>{warning.severity === "watch" ? "Watch" : "Note"}</span>
-                  <div>
-                    <strong>{warning.title}</strong>
-                    <p>{warning.body}</p>
+                  <div className="conversation-card">
+                    <div className="conversation-card__head">
+                      <strong>Conversation example</strong>
+                      <select value={conversationTone} onChange={(event) => setConversationTone(event.target.value as ConversationTone)}>
+                        <option value="direct">More direct</option>
+                        <option value="supportive">More supportive</option>
+                        <option value="concise">More concise</option>
+                        <option value="collaborative">More collaborative</option>
+                      </select>
+                    </div>
+                    <blockquote>“{getConversationExample(workingProfile, recommendedProfile, conversationTone)}”</blockquote>
                   </div>
                 </article>
-              ))}
-            </div>
-          </section>
 
-          <section className="panel situation-panel">
-            <div className="panel__heading">
-              <div>
-                <span className="section-kicker">Situation explorer</span>
-                <h2>Test this configuration</h2>
-              </div>
-              <span className={`fit-badge fit-badge--${selectedScore.score >= 72 ? "good" : selectedScore.score >= 52 ? "mid" : "low"}`}>
-                {fitLabel(selectedScore.score)}
-              </span>
-            </div>
-
-            <div className="field-grid">
-              <label>
-                <span>Category</span>
-                <select value={category} onChange={(event) => selectCategory(event.target.value as "All" | SituationCategory)}>
-                  <option value="All">All situations</option>
-                  {SITUATION_CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-              </label>
-              <label>
-                <span>Situation</span>
-                <select value={selectedSituation.id} onChange={(event) => setSelectedSituationId(event.target.value)}>
-                  {filteredSituations.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-                </select>
-              </label>
-            </div>
-
-            <div className="fit-overview">
-              <div
-                className="fit-ring"
-                style={{ "--fit-score": `${selectedScore.score * 3.6}deg` } as React.CSSProperties}
-                aria-label={`Fit score ${selectedScore.score} out of 100`}
-              >
-                <div><strong>{selectedScore.score}</strong><span>fit score</span></div>
-              </div>
-              <div>
-                <span className="category-pill">{selectedSituation.category}</span>
-                <h3>{selectedSituation.title}</h3>
-                <p>{selectedSituation.summary}</p>
+                <article className="panel">
+                  <div className="panel__heading"><div><span className="section-kicker">Guardrails</span><h2>Overcorrection and combination warnings</h2></div></div>
+                  <div className="warning-stack">
+                    {[...overcorrectionWarnings, ...profileWarnings].slice(0, 5).map((warning) => (
+                      <article className={`warning-card warning-card--${warning.severity}`} key={warning.id}>
+                        <span>{warning.severity === "watch" ? "Watch" : "Note"}</span>
+                        <div><strong>{warning.title}</strong><p>{warning.body}</p></div>
+                      </article>
+                    ))}
+                  </div>
+                </article>
               </div>
             </div>
 
-            <RadarChart profile={profile} comparison={selectedSituation.ideal} compact />
-
-            <div className="recommendation-block">
-              <span className="mini-heading">Highest-value adaptations</span>
-              {recommendations.length ? (
-                <div className="recommendation-list">
-                  {recommendations.map((recommendation, index) => (
-                    <button
-                      key={recommendation.key}
-                      onClick={() => setActiveDimension(recommendation.key)}
-                      className={activeDimension === recommendation.key ? "recommendation recommendation--active" : "recommendation"}
-                    >
+            <div className="two-column-layout">
+              <article className="panel">
+                <div className="panel__heading"><div><span className="section-kicker">Where this style helps</span><h2>Best-fit situations</h2></div><span className="count-badge">Top 6</span></div>
+                <div className="ranked-situation-list">
+                  {rankedSituations.slice(0, 6).map((item, index) => (
+                    <button key={item.situation.id} onClick={() => { setSelectedSituationId(item.situation.id); setActiveTab("context"); }}>
                       <span>{index + 1}</span>
-                      <div>
-                        <strong>{recommendation.dimensionName}</strong>
-                        <small>Move {recommendation.text}</small>
-                      </div>
-                      <Icon name="arrow" />
+                      <div><strong>{item.situation.title}</strong><small>{item.situation.category}</small></div>
+                      <b>{item.score}%</b>
                     </button>
                   ))}
                 </div>
-              ) : (
-                <p className="empty-note">This configuration is already close to the situation profile.</p>
-              )}
-            </div>
+              </article>
 
-            <div className="marginal-card">
-              <div className="marginal-card__header">
-                <div>
-                  <span className="mini-heading">Hold everything else constant</span>
-                  <h3>{activeDefinition.name}</h3>
+              <article className="panel">
+                <div className="panel__heading"><div><span className="section-kicker">Hold all other sliders constant</span><h2>{activeDefinition.name}</h2></div><span className="value-pill">{workingProfile[activeDimension]}</span></div>
+                <label className="full-field"><span>Analyze against situation</span>
+                  <select value={selectedSituationId} onChange={(event) => setSelectedSituationId(event.target.value)}>
+                    {SITUATIONS.map((situation) => <option key={situation.id} value={situation.id}>{situation.title}</option>)}
+                  </select>
+                </label>
+                <p className="helper-copy">{activeDefinition.description}</p>
+                <div className="impact-options">
+                  <button onClick={() => setWorkingProfile((current) => ({ ...current, [activeDimension]: clamp(current[activeDimension] - 10) }))} disabled={workingProfile[activeDimension] === 0}>
+                    <span>−10 toward {activeDefinition.lowLabel}</span><strong className={activeImpact.lowerImpact > 0 ? "impact-positive" : activeImpact.lowerImpact < 0 ? "impact-negative" : ""}>{activeImpact.lowerImpact > 0 ? "+" : ""}{activeImpact.lowerImpact} fit</strong>
+                  </button>
+                  <div><span>Hold current position</span><strong>{currentFit.score}% fit</strong></div>
+                  <button onClick={() => setWorkingProfile((current) => ({ ...current, [activeDimension]: clamp(current[activeDimension] + 10) }))} disabled={workingProfile[activeDimension] === 100}>
+                    <span>+10 toward {activeDefinition.highLabel}</span><strong className={activeImpact.higherImpact > 0 ? "impact-positive" : activeImpact.higherImpact < 0 ? "impact-negative" : ""}>{activeImpact.higherImpact > 0 ? "+" : ""}{activeImpact.higherImpact} fit</strong>
+                  </button>
                 </div>
-                <span className="value-pill">{profile[activeDimension]}</span>
-              </div>
-              <p>{activeDefinition.description}</p>
-              <div className="impact-options">
-                <button onClick={() => applyStep(activeDimension, -10)} disabled={profile[activeDimension] === 0}>
-                  <span>−10 toward {activeDefinition.lowLabel}</span>
-                  <strong className={activeImpact.lowerImpact > 0 ? "impact-positive" : activeImpact.lowerImpact < 0 ? "impact-negative" : ""}>
-                    {impactText(activeImpact.lowerImpact)} fit
-                  </strong>
-                </button>
-                <div>
-                  <span>Hold at {profile[activeDimension]}</span>
-                  <strong>Current {selectedScore.score}</strong>
-                </div>
-                <button onClick={() => applyStep(activeDimension, 10)} disabled={profile[activeDimension] === 100}>
-                  <span>+10 toward {activeDefinition.highLabel}</span>
-                  <strong className={activeImpact.higherImpact > 0 ? "impact-positive" : activeImpact.higherImpact < 0 ? "impact-negative" : ""}>
-                    {impactText(activeImpact.higherImpact)} fit
-                  </strong>
-                </button>
-              </div>
-              <small className="model-note">This comparison changes one slider only; all other values remain fixed.</small>
-            </div>
-
-            <div className="action-box">
-              <span className="mini-heading">Management moves</span>
-              <ul>
-                {selectedSituation.recommendedActions.map((action) => <li key={action}>{action}</li>)}
-              </ul>
-              <p><strong>Risk:</strong> {selectedSituation.warning}</p>
+              </article>
             </div>
           </section>
-        </section>
+        )}
 
-        <section className="insights-grid">
-          <article className="panel rankings-panel">
-            <div className="panel__heading">
-              <div>
-                <span className="section-kicker">Configuration map</span>
-                <h2>Where this style helps most</h2>
-              </div>
+        {activeTab === "assessment" && (
+          <section className="tab-stack">
+            <div className="section-heading-row">
+              <div><span className="section-kicker">Scenario-based onboarding</span><h2>Estimate your instinctive style from choices</h2><p>Choose what you would genuinely do first, not what sounds theoretically ideal.</p></div>
+              <span className="count-badge">{answeredAssessmentCount}/{ASSESSMENT_SCENARIOS.length} answered</span>
             </div>
-            <div className="ranking-columns">
-              <div>
-                <span className="mini-heading">Strongest matches</span>
-                {rankedSituations.slice(0, 5).map((item, index) => (
-                  <button className="ranking-row" key={item.situation.id} onClick={() => setSelectedSituationId(item.situation.id)}>
-                    <span className="rank-number">{index + 1}</span>
-                    <div><strong>{item.situation.title}</strong><small>{item.situation.category}</small></div>
-                    <span className="ranking-score">{item.score}</span>
-                  </button>
+            <div className="assessment-layout">
+              <div className="assessment-list">
+                {ASSESSMENT_SCENARIOS.map((scenario, index) => (
+                  <article className="panel assessment-card" key={scenario.id}>
+                    <span className="assessment-number">{index + 1}</span>
+                    <div><span className="section-kicker">{scenario.title}</span><h3>{scenario.prompt}</h3></div>
+                    <div className="option-list">
+                      {scenario.options.map((option) => (
+                        <label className={assessmentAnswers[scenario.id] === option.id ? "choice-card choice-card--selected" : "choice-card"} key={option.id}>
+                          <input
+                            type="radio"
+                            name={scenario.id}
+                            checked={assessmentAnswers[scenario.id] === option.id}
+                            onChange={() => setAssessmentAnswers((current) => ({ ...current, [scenario.id]: option.id }))}
+                          />
+                          <span><strong>{option.label}</strong><small>{option.rationale}</small></span>
+                        </label>
+                      ))}
+                    </div>
+                  </article>
                 ))}
               </div>
-              <div>
-                <span className="mini-heading">Largest adaptations</span>
-                {rankedSituations.slice(-5).reverse().map((item) => (
-                  <button className="ranking-row" key={item.situation.id} onClick={() => setSelectedSituationId(item.situation.id)}>
-                    <span className="rank-number rank-number--stretch">↗</span>
-                    <div><strong>{item.situation.title}</strong><small>{item.situation.category}</small></div>
-                    <span className="ranking-score ranking-score--stretch">{item.score}</span>
-                  </button>
-                ))}
-              </div>
+              <aside className="sticky-column">
+                <ProfileSummary label="Assessment estimate" title="Emerging natural style" profile={assessmentProfile} />
+                <button className="button button--primary button--wide" disabled={answeredAssessmentCount < 3} onClick={() => { setNaturalProfile({ ...assessmentProfile }); setWorkingProfile({ ...assessmentProfile }); setActiveTab("styles"); }}>
+                  Apply as my natural style
+                </button>
+                <p className="helper-text">Answer at least three scenarios. Completing all six produces a more stable estimate.</p>
+              </aside>
             </div>
-          </article>
+          </section>
+        )}
 
-          <article className="panel saved-panel">
-            <div className="panel__heading">
-              <div>
-                <span className="section-kicker">Style switching</span>
-                <h2>Saved management modes</h2>
-              </div>
-              <span className="count-badge">{hydrated ? savedModes.length : "–"} saved</span>
+        {activeTab === "context" && (
+          <section className="tab-stack">
+            <div className="section-heading-row">
+              <div><span className="section-kicker">Situational leadership engine</span><h2>Describe the team and the stakes</h2><p>The recommendation combines a curated situation with eight independent context signals.</p></div>
+              <span className={`fit-badge fit-badge--${scoreClass(currentFit.score)}`}>{fitLabel(currentFit.score)}</span>
             </div>
-            <p className="panel-intro">Save deliberate modes for recurring contexts, then load them before a conversation, project, or incident.</p>
-            <div className="save-form">
-              <input
-                value={modeName}
-                maxLength={36}
-                onChange={(event) => setModeName(event.target.value)}
-                onKeyDown={(event) => { if (event.key === "Enter") saveMode(); }}
-                placeholder="e.g. First-month coaching"
-                aria-label="Saved mode name"
-              />
-              <button className="button button--primary" onClick={saveMode} disabled={!modeName.trim()}><Icon name="save" /> Save</button>
-            </div>
-            <div className="saved-list">
-              {savedModes.length ? savedModes.map((mode) => {
-                const match = getArchetypeMatches(mode.profile)[0];
-                return (
-                  <div className="saved-mode" key={mode.id}>
-                    <button className="saved-mode__load" onClick={() => setProfile({ ...mode.profile })}>
-                      <span className="saved-mode__code">{match.archetype.code}</span>
-                      <div><strong>{mode.name}</strong><small>{match.archetype.name}</small></div>
-                    </button>
-                    <button className="icon-button" onClick={() => deleteMode(mode.id)} aria-label={`Delete ${mode.name}`}><Icon name="trash" /></button>
-                  </div>
-                );
-              }) : (
-                <div className="empty-state">
-                  <strong>No modes saved yet</strong>
-                  <p>Adjust the dials, name the configuration, and save it locally in this browser.</p>
+            <div className="two-column-layout">
+              <article className="panel">
+                <label className="full-field"><span>Starting situation</span>
+                  <select value={selectedSituationId} onChange={(event) => setSelectedSituationId(event.target.value)}>
+                    {SITUATIONS.map((situation) => <option key={situation.id} value={situation.id}>{situation.title}</option>)}
+                  </select>
+                </label>
+                <div className="situation-intro"><strong>{selectedSituation.title}</strong><p>{selectedSituation.summary}</p></div>
+                <div className="context-control-list">
+                  {CONTEXT_DEFINITIONS.map((definition) => {
+                    const value = context[definition.key];
+                    return (
+                      <div className="context-control" key={definition.key}>
+                        <div><label htmlFor={`context-${definition.key}`}>{definition.name}</label><span>{value}</span></div>
+                        <p>{definition.description}</p>
+                        <input
+                          id={`context-${definition.key}`}
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={value}
+                          style={{ "--slider-value": `${value}%` } as React.CSSProperties}
+                          onChange={(event) => setContext((current) => ({ ...current, [definition.key]: Number(event.target.value) } as SituationContext))}
+                        />
+                        <div className="range-labels"><span>{definition.lowLabel}</span><span>{definition.highLabel}</span></div>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
-          </article>
-        </section>
+              </article>
 
-        <section className="methodology">
-          <div>
-            <span className="section-kicker">How to interpret the result</span>
-            <h2>A simulator, not a psychological diagnosis.</h2>
-          </div>
-          <div className="methodology__grid">
-            <p><strong>Independent dimensions.</strong> Care and challenge, people and task, or autonomy and transparency can move separately. The app avoids collapsing them into one “good manager” number.</p>
-            <p><strong>Situational ideals.</strong> Every scenario has a transparent reference configuration and weighted dimensions. Fit is a weighted distance, adjusted by a small set of visible combination rules.</p>
-            <p><strong>Conversation starter.</strong> The scores are hypotheses for reflection, coaching, and team discussion—not validated clinical or employment-selection measurements.</p>
-          </div>
-        </section>
+              <div className="stacked-column">
+                <div className="profile-comparison-grid profile-comparison-grid--two">
+                  <ProfileSummary label="Current" title="Working style" profile={workingProfile} />
+                  <ProfileSummary label="Calculated" title="Recommended style" profile={recommendedProfile} comparison={workingProfile} action={<button className="text-button" onClick={() => setWorkingProfile({ ...recommendedProfile })}>Adopt</button>} />
+                </div>
+                <article className="panel">
+                  <div className="panel__heading"><div><span className="section-kicker">Context-specific profiles</span><h2>Save how you lead different groups</h2></div></div>
+                  <div className="inline-form">
+                    <input value={contextProfileName} onChange={(event) => setContextProfileName(event.target.value)} placeholder="e.g. Senior engineers" />
+                    <button className="button button--primary" onClick={saveContextProfile} disabled={!contextProfileName.trim()}>Save profile</button>
+                  </div>
+                  <div className="saved-card-list">
+                    {contextProfiles.length ? contextProfiles.map((item) => (
+                      <article className="saved-card" key={item.id}>
+                        <div><strong>{item.name}</strong><small>{item.description} · {formatDate(item.createdAt)}</small></div>
+                        <div className="saved-card__actions">
+                          <button className="text-button" onClick={() => setWorkingProfile({ ...item.profile })}>Load</button>
+                          <button className="text-button text-button--danger" onClick={() => setContextProfiles((current) => current.filter((profile) => profile.id !== item.id))}>Delete</button>
+                        </div>
+                      </article>
+                    )) : <EmptyState title="No context profiles yet" body="Save separate working styles for senior engineers, junior employees, cross-functional partners, or other recurring contexts." />}
+                  </div>
+                </article>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "history" && (
+          <section className="tab-stack">
+            <div className="section-heading-row"><div><span className="section-kicker">Style history</span><h2>Record how your management mode changes</h2><p>{getHistoryInsight(snapshots)}</p></div><span className="count-badge">{snapshots.length} snapshots</span></div>
+            <div className="two-column-layout">
+              <article className="panel">
+                <div className="panel__heading"><div><span className="section-kicker">New snapshot</span><h2>Capture the current working style</h2></div></div>
+                <div className="quick-labels">
+                  {["Before joining the team", "After 30 days", "During a crisis", "After team feedback"].map((label) => <button className="preset-chip" key={label} onClick={() => setSnapshotLabel(label)}>{label}</button>)}
+                </div>
+                <label className="full-field"><span>Snapshot label</span><input value={snapshotLabel} onChange={(event) => setSnapshotLabel(event.target.value)} /></label>
+                <label className="full-field"><span>Optional note</span><textarea value={snapshotNote} onChange={(event) => setSnapshotNote(event.target.value)} placeholder="What changed in the team or situation?" /></label>
+                <button className="button button--primary" onClick={saveSnapshot}>Record snapshot</button>
+                <ProfileSummary label="Will be recorded" title={snapshotLabel || "Current style"} profile={workingProfile} />
+              </article>
+              <div className="timeline">
+                {snapshots.length ? [...snapshots].reverse().map((snapshot, index) => (
+                  <article className="timeline-item" key={snapshot.id}>
+                    <span className="timeline-dot" />
+                    <div className="panel">
+                      <div className="timeline-item__head"><div><span>{formatDate(snapshot.createdAt)}</span><h3>{snapshot.label}</h3></div><button className="text-button text-button--danger" onClick={() => setSnapshots((current) => current.filter((item) => item.id !== snapshot.id))}>Delete</button></div>
+                      {snapshot.note && <p>{snapshot.note}</p>}
+                      {index < snapshots.length - 1 && (
+                        <small>Compared with the previous recorded point, review the largest movements in the radar shape rather than treating any direction as universally better.</small>
+                      )}
+                    </div>
+                  </article>
+                )) : <EmptyState title="Your timeline is empty" body="Record the same team at meaningful moments to see whether urgency, feedback, or organizational pressure is changing how you lead." />}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "team" && (
+          <section className="tab-stack">
+            <div className="section-heading-row"><div><span className="section-kicker">Team perception comparison</span><h2>Compare intent with experienced behavior</h2><p>This MVP stores responses only in this browser. A production anonymous survey would require authentication, secure aggregation, minimum response thresholds, and a backend.</p></div><span className="count-badge">{perceptions.length} responses</span></div>
+            <div className="two-column-layout">
+              <article className="panel">
+                <div className="panel__heading"><div><span className="section-kicker">Anonymous response preview</span><h2>How does this manager feel in practice?</h2></div></div>
+                <label className="full-field"><span>Relationship context</span>
+                  <select value={relationship} onChange={(event) => setRelationship(event.target.value)}>
+                    <option>Team member</option><option>Peer</option><option>Direct manager</option><option>Cross-functional partner</option>
+                  </select>
+                </label>
+                <ProfileSliders profile={perceptionDraft} onChange={setPerceptionDraft} compact />
+                <button className="button button--primary" onClick={addPerception}>Add anonymous response</button>
+              </article>
+              <div className="stacked-column">
+                {teamAverage ? (
+                  <>
+                    <div className="profile-comparison-grid profile-comparison-grid--two">
+                      <ProfileSummary label="Self view" title="Current working style" profile={workingProfile} />
+                      <ProfileSummary label={`${perceptions.length} response average`} title="Team experience" profile={teamAverage} comparison={workingProfile} />
+                    </div>
+                    <article className="panel">
+                      <div className="panel__heading"><div><span className="section-kicker">Largest perception gaps</span><h2>Where intent and experience differ</h2></div></div>
+                      <div className="gap-list">
+                        {perceptionGaps.map((gap) => (
+                          <div className="gap-row" key={gap.key}>
+                            <div><strong>{gap.name}</strong><small>Experienced as more {gap.experiencedAs.toLowerCase()}</small></div>
+                            <span>Self {gap.self}</span><b>{gap.gap > 0 ? `+${gap.gap}` : gap.gap}</b><span>Team {gap.team}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <button className="text-button text-button--danger" onClick={() => setPerceptions([])}>Clear local responses</button>
+                    </article>
+                  </>
+                ) : <EmptyState title="No team responses yet" body="Add at least one response to compare how your current working style is experienced by others." />}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "journal" && (
+          <section className="tab-stack">
+            <div className="section-heading-row"><div><span className="section-kicker">Decision journal</span><h2>Connect chosen style to actual outcomes</h2><p>{getJournalInsight(journal)}</p></div><span className="count-badge">{journal.length} decisions</span></div>
+            <div className="two-column-layout">
+              <article className="panel journal-form">
+                <label className="full-field"><span>Situation</span><input value={journalForm.situation} onChange={(event) => setJournalForm((current) => ({ ...current, situation: event.target.value }))} placeholder="What management decision did you face?" /></label>
+                <label className="full-field"><span>Chosen style</span><input value={journalForm.chosenStyle} onChange={(event) => setJournalForm((current) => ({ ...current, chosenStyle: event.target.value }))} placeholder="e.g. Participative planning with firm deadline" /></label>
+                <label className="full-field"><span>Intended outcome</span><textarea value={journalForm.intendedOutcome} onChange={(event) => setJournalForm((current) => ({ ...current, intendedOutcome: event.target.value }))} /></label>
+                <label className="full-field"><span>What happened</span><textarea value={journalForm.actualOutcome} onChange={(event) => setJournalForm((current) => ({ ...current, actualOutcome: event.target.value }))} /></label>
+                <label className="full-field"><span>What would you change?</span><textarea value={journalForm.reflection} onChange={(event) => setJournalForm((current) => ({ ...current, reflection: event.target.value }))} /></label>
+                <button className="button button--primary" onClick={addJournalEntry} disabled={!journalForm.situation.trim() || !journalForm.intendedOutcome.trim()}>Record decision</button>
+              </article>
+              <div className="journal-list">
+                {journal.length ? journal.map((entry) => (
+                  <article className="panel journal-entry" key={entry.id}>
+                    <div className="timeline-item__head"><div><span>{formatDate(entry.createdAt)}</span><h3>{entry.situation}</h3></div><button className="text-button text-button--danger" onClick={() => setJournal((current) => current.filter((item) => item.id !== entry.id))}>Delete</button></div>
+                    {entry.chosenStyle && <p><strong>Chosen style:</strong> {entry.chosenStyle}</p>}
+                    <p><strong>Intended:</strong> {entry.intendedOutcome}</p>
+                    {entry.actualOutcome && <p><strong>Outcome:</strong> {entry.actualOutcome}</p>}
+                    {entry.reflection && <p><strong>Next time:</strong> {entry.reflection}</p>}
+                  </article>
+                )) : <EmptyState title="No decisions recorded" body="The journal becomes useful when you revisit outcomes instead of evaluating a choice only by how reasonable it felt at the time." />}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "simulator" && (
+          <section className="tab-stack">
+            <div className="section-heading-row"><div><span className="section-kicker">Branching practice</span><h2>See how management choices change the system</h2><p>These are learning simulations, not predictions about a specific person.</p></div><button className="button button--ghost" onClick={() => resetSimulator()}>Restart scenario</button></div>
+            <div className="simulator-layout">
+              <article className="panel simulator-panel">
+                <label className="full-field"><span>Scenario</span>
+                  <select value={simulatorId} onChange={(event) => resetSimulator(event.target.value)}>
+                    {SIMULATOR_SCENARIOS.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.title}</option>)}
+                  </select>
+                </label>
+                <div className="situation-intro"><strong>{simulator.title}</strong><p>{simulator.description}</p></div>
+                {simulatorResponse && <div className="simulator-response"><span>What happened</span><p>{simulatorResponse}</p></div>}
+                {!simulatorComplete && simulatorNode ? (
+                  <>
+                    <h3 className="simulator-prompt">{simulatorNode.prompt}</h3>
+                    <div className="simulator-choices">
+                      {simulatorNode.choices.map((choice) => <button key={choice.id} onClick={() => chooseSimulatorOption(choice)}>{choice.label}</button>)}
+                    </div>
+                  </>
+                ) : (
+                  <div className="simulator-finish"><strong>Scenario complete</strong><p>Review the system effects, then replay with a different first move. The strongest answer often combines temporary situational adaptation with an explicit return to normal ownership.</p></div>
+                )}
+              </article>
+              <aside className="panel outcome-panel">
+                <div className="panel__heading"><div><span className="section-kicker">Simulated effects</span><h2>Team system</h2></div></div>
+                {Object.entries(simulatorScores).map(([key, value]) => (
+                  <div className="outcome-meter" key={key}>
+                    <div><span>{key}</span><strong>{value}</strong></div>
+                    <div><i style={{ width: `${value}%` }} /></div>
+                  </div>
+                ))}
+                <div className="insight-card"><strong>Interpretation</strong><p>Clarity and delivery can rise while trust and accountability fall. The simulator makes those trade-offs visible instead of rewarding only immediate output.</p></div>
+              </aside>
+            </div>
+          </section>
+        )}
       </main>
 
-      <footer>
-        <span>LeadShift MVP</span>
-        <span>{ARCHETYPES.length} archetypes · {SITUATIONS.length} situations · deterministic scoring</span>
+      <footer className="footer">
+        <strong>LeadShift</strong>
+        <span>A reflective learning tool—not a clinical assessment or a substitute for team feedback.</span>
       </footer>
     </div>
   );

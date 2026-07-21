@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "LeadShift — Situational Leadership Laboratory",
   description:
-    "Explore management styles as movable dials, discover archetypes, and test situational fit.",
+    "Separate your natural and chosen management styles, build context-aware recommendations, compare team perception, and practice through simulations.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
