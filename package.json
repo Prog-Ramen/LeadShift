@@ -1,6 +1,6 @@
 {
   "name": "leadshift",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -8,7 +8,8 @@
     "postbuild": "node scripts/prepare-standalone.mjs",
     "start": "node .next/standalone/server.js",
     "lint": "eslint",
-    "verify": "npm run lint && npm run build"
+    "verify": "npm run lint && npm run build",
+    "analytics:summary": "node scripts/summarize-analytics.mjs"
   },
   "dependencies": {
     "next": "16.2.10",

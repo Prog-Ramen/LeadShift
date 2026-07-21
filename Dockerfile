@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1
 
 FROM node:22-alpine AS base
 WORKDIR /app
@@ -7,7 +7,8 @@ RUN apk add --no-cache libc6-compat
 
 FROM base AS dependencies
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
+# Deliberately avoids a BuildKit-only cache mount for compatibility with older builders.
+RUN npm ci
 
 FROM base AS builder
 COPY --from=dependencies /app/node_modules ./node_modules
@@ -18,15 +19,20 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3001 \
-    HOSTNAME=0.0.0.0
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    LEADSHIFT_ANALYTICS_MODE=file \
+    LEADSHIFT_ANALYTICS_FILE=/app/data/analytics/events.ndjson
 
 RUN addgroup --system --gid 1001 nodejs \
-    && adduser --system --uid 1001 nextjs
+    && adduser --system --uid 1001 nextjs \
+    && mkdir -p /app/data/analytics \
+    && chown -R nextjs:nodejs /app/data
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/summarize-analytics.mjs ./scripts/summarize-analytics.mjs
 
 USER nextjs
 EXPOSE 3000

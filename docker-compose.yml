@@ -3,10 +3,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: leadshift:latest
+    image: leadshift:0.3.0
     ports:
-      - "3001:3001"
+      - "3000:3000"
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
+      LEADSHIFT_ANALYTICS_MODE: "${LEADSHIFT_ANALYTICS_MODE:-file}"
+      LEADSHIFT_ANALYTICS_FILE: "${LEADSHIFT_ANALYTICS_FILE:-/app/data/analytics/events.ndjson}"
+      LEADSHIFT_ANALYTICS_WEBHOOK_URL: "${LEADSHIFT_ANALYTICS_WEBHOOK_URL:-}"
+    volumes:
+      - leadshift_data:/app/data
     restart: unless-stopped
+
+volumes:
+  leadshift_data:

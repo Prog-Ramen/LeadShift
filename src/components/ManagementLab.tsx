@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ProfileSliders } from "@/components/ProfileSliders";
 import { ProfileSummary } from "@/components/ProfileSummary";
 import { ASSESSMENT_SCENARIOS } from "@/data/assessment";
@@ -10,6 +10,7 @@ import { SIMULATOR_SCENARIOS } from "@/data/simulator";
 import { SITUATIONS } from "@/data/situations";
 import {
   clamp,
+  getArchetypeCode,
   getAssessmentProfile,
   getBehaviorRecommendations,
   getContextRecommendedProfile,
@@ -26,6 +27,20 @@ import {
   scoreSituation,
   type ConversationTone,
 } from "@/lib/engine";
+import {
+  clearAnalyticsPreference,
+  getAnalyticsPreference,
+  setAnalyticsPreference,
+  trackEvent,
+  valueBand,
+  type AnalyticsPreference,
+} from "@/lib/analytics";
+import {
+  clearSessionWorkspace,
+  loadSessionWorkspace,
+  removeLegacyPersistentWorkspace,
+  saveSessionWorkspace,
+} from "@/lib/session-storage";
 import type {
   ContextProfile,
   DimensionKey,
@@ -37,7 +52,6 @@ import type {
   TeamPerceptionResponse,
 } from "@/lib/types";
 
-const STORAGE_KEY = "leadshift:workspace:v2";
 const TABS = [
   ["styles", "Style lab"],
   ["assessment", "Assessment"],
@@ -51,14 +65,22 @@ const TABS = [
 type TabId = (typeof TABS)[number][0];
 
 type StoredWorkspace = {
+  activeTab: TabId;
   naturalProfile: ManagementProfile;
   workingProfile: ManagementProfile;
   context: SituationContext;
   selectedSituationId: string;
+  assessmentAnswers: Record<string, string>;
+  conversationTone: ConversationTone;
   snapshots: StyleSnapshot[];
   perceptions: TeamPerceptionResponse[];
   contextProfiles: ContextProfile[];
   journal: JournalEntry[];
+  simulatorId: string;
+  simulatorNodeId: string;
+  simulatorScores: { trust: number; clarity: number; accountability: number; delivery: number };
+  simulatorResponse: string;
+  simulatorComplete: boolean;
 };
 
 const uid = () =>
@@ -120,14 +142,18 @@ export default function ManagementLab() {
   const [simulatorResponse, setSimulatorResponse] = useState("");
   const [simulatorComplete, setSimulatorComplete] = useState(false);
   const [shareStatus, setShareStatus] = useState("Share working style");
+  const [analyticsPreference, setAnalyticsPreferenceState] = useState<AnalyticsPreference>("unset");
   const [hydrated, setHydrated] = useState(false);
+  const sliderAnalyticsTimer = useRef<number | null>(null);
+  const sessionStartedTracked = useRef(false);
+  const assessmentStartedTracked = useRef(false);
 
   useEffect(() => {
-    let stored: Partial<StoredWorkspace> = {};
+    removeLegacyPersistentWorkspace();
+    const stored = loadSessionWorkspace<StoredWorkspace>();
+    const preference = getAnalyticsPreference();
     let sharedProfile: ManagementProfile | null = null;
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) stored = JSON.parse(raw) as Partial<StoredWorkspace>;
       const encoded = new URLSearchParams(window.location.search).get("style");
       if (encoded) {
         const values = encoded.split(".").map(Number);
@@ -143,15 +169,24 @@ export default function ManagementLab() {
     }
 
     queueMicrotask(() => {
+      if (stored.activeTab) setActiveTab(stored.activeTab);
       if (stored.naturalProfile) setNaturalProfile(stored.naturalProfile);
       if (sharedProfile) setWorkingProfile(sharedProfile);
       else if (stored.workingProfile) setWorkingProfile(stored.workingProfile);
       if (stored.context) setContext(stored.context);
       if (stored.selectedSituationId) setSelectedSituationId(stored.selectedSituationId);
+      if (stored.assessmentAnswers) setAssessmentAnswers(stored.assessmentAnswers);
+      if (stored.conversationTone) setConversationTone(stored.conversationTone);
       if (stored.snapshots) setSnapshots(stored.snapshots);
       if (stored.perceptions) setPerceptions(stored.perceptions);
       if (stored.contextProfiles) setContextProfiles(stored.contextProfiles);
       if (stored.journal) setJournal(stored.journal);
+      if (stored.simulatorId) setSimulatorId(stored.simulatorId);
+      if (stored.simulatorNodeId) setSimulatorNodeId(stored.simulatorNodeId);
+      if (stored.simulatorScores) setSimulatorScores(stored.simulatorScores);
+      if (stored.simulatorResponse !== undefined) setSimulatorResponse(stored.simulatorResponse);
+      if (stored.simulatorComplete !== undefined) setSimulatorComplete(stored.simulatorComplete);
+      setAnalyticsPreferenceState(preference);
       setHydrated(true);
     });
   }, []);
@@ -159,31 +194,111 @@ export default function ManagementLab() {
   useEffect(() => {
     if (!hydrated) return;
     const workspace: StoredWorkspace = {
+      activeTab,
       naturalProfile,
       workingProfile,
       context,
       selectedSituationId,
+      assessmentAnswers,
+      conversationTone,
       snapshots,
       perceptions,
       contextProfiles,
       journal,
+      simulatorId,
+      simulatorNodeId,
+      simulatorScores,
+      simulatorResponse,
+      simulatorComplete,
     };
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace));
-    } catch {
-      // Ignore blocked or full storage.
-    }
+    saveSessionWorkspace(workspace);
   }, [
     hydrated,
+    activeTab,
     naturalProfile,
     workingProfile,
     context,
     selectedSituationId,
+    assessmentAnswers,
+    conversationTone,
     snapshots,
     perceptions,
     contextProfiles,
     journal,
+    simulatorId,
+    simulatorNodeId,
+    simulatorScores,
+    simulatorResponse,
+    simulatorComplete,
   ]);
+
+  useEffect(() => {
+    if (!hydrated || analyticsPreference !== "accepted" || sessionStartedTracked.current) return;
+    sessionStartedTracked.current = true;
+    void trackEvent("session_started", { entryTab: activeTab });
+  }, [activeTab, analyticsPreference, hydrated]);
+
+  useEffect(() => {
+    if (activeTab !== "assessment" || assessmentStartedTracked.current) return;
+    assessmentStartedTracked.current = true;
+    void trackEvent("assessment_started");
+  }, [activeTab]);
+
+  const changeTab = (tab: TabId) => {
+    setActiveTab(tab);
+    void trackEvent("tab_viewed", { tab });
+  };
+
+  const selectSituation = (situationId: string) => {
+    setSelectedSituationId(situationId);
+    void trackEvent("situation_selected", { situationId });
+  };
+
+  const applyWorkingProfile = (profile: ManagementProfile, source: string) => {
+    setWorkingProfile({ ...profile });
+    void trackEvent("profile_applied", { source, archetype: getArchetypeCode(profile) });
+  };
+
+  const changeWorkingProfile = (profile: ManagementProfile) => {
+    const changed = DIMENSIONS.find((dimension) => workingProfile[dimension.key] !== profile[dimension.key]);
+    if (changed) {
+      const previousValue = workingProfile[changed.key];
+      const nextValue = profile[changed.key];
+      if (sliderAnalyticsTimer.current) window.clearTimeout(sliderAnalyticsTimer.current);
+      sliderAnalyticsTimer.current = window.setTimeout(() => {
+        void trackEvent("slider_adjusted", {
+          dimension: changed.key,
+          previousBand: valueBand(previousValue),
+          nextBand: valueBand(nextValue),
+          changeMagnitude: Math.abs(nextValue - previousValue),
+        });
+      }, 700);
+    }
+    setWorkingProfile(profile);
+  };
+
+  const chooseAnalytics = (preference: Exclude<AnalyticsPreference, "unset">) => {
+    setAnalyticsPreference(preference);
+    setAnalyticsPreferenceState(preference);
+    if (preference === "accepted") {
+      sessionStartedTracked.current = true;
+      void trackEvent("session_started", { entryTab: activeTab, consentJustGranted: true });
+    }
+  };
+
+  const reopenAnalyticsChoice = () => {
+    clearAnalyticsPreference();
+    setAnalyticsPreferenceState("unset");
+    sessionStartedTracked.current = false;
+  };
+
+  const resetSession = () => {
+    void trackEvent("session_reset");
+    clearSessionWorkspace();
+    const url = new URL(window.location.href);
+    url.searchParams.delete("style");
+    window.location.replace(`${url.pathname}${url.search}${url.hash}`);
+  };
 
   const selectedSituation =
     SITUATIONS.find((situation) => situation.id === selectedSituationId) ?? SITUATIONS[0];
@@ -253,6 +368,7 @@ export default function ManagementLab() {
       },
     ]);
     setSnapshotNote("");
+    void trackEvent("snapshot_saved", { snapshotNumber: snapshots.length + 1 });
   };
 
   const addPerception = () => {
@@ -266,6 +382,7 @@ export default function ManagementLab() {
       },
     ]);
     setPerceptionDraft(DEFAULT_PROFILE);
+    void trackEvent("team_perception_added", { responseNumber: perceptions.length + 1 });
   };
 
   const saveContextProfile = () => {
@@ -282,6 +399,7 @@ export default function ManagementLab() {
       ...current,
     ]);
     setContextProfileName("");
+    void trackEvent("context_profile_saved", { situationId: selectedSituationId, profileNumber: contextProfiles.length + 1 });
   };
 
   const addJournalEntry = () => {
@@ -296,6 +414,12 @@ export default function ManagementLab() {
       ...current,
     ]);
     setJournalForm({ situation: "", chosenStyle: "", intendedOutcome: "", actualOutcome: "", reflection: "" });
+    void trackEvent("journal_entry_saved", {
+      hasChosenStyle: Boolean(journalForm.chosenStyle.trim()),
+      hasActualOutcome: Boolean(journalForm.actualOutcome.trim()),
+      hasReflection: Boolean(journalForm.reflection.trim()),
+      entryNumber: journal.length + 1,
+    });
   };
 
   const resetSimulator = (nextId = simulatorId) => {
@@ -305,20 +429,29 @@ export default function ManagementLab() {
     setSimulatorScores({ trust: 50, clarity: 50, accountability: 50, delivery: 50 });
     setSimulatorResponse("");
     setSimulatorComplete(false);
+    void trackEvent("simulation_started", { scenarioId: next.id });
   };
 
   const chooseSimulatorOption = (choice: SimulatorChoice) => {
-    setSimulatorScores((current) => ({
-      trust: clamp(current.trust + choice.effects.trust),
-      clarity: clamp(current.clarity + choice.effects.clarity),
-      accountability: clamp(current.accountability + choice.effects.accountability),
-      delivery: clamp(current.delivery + choice.effects.delivery),
-    }));
+    const nextScores = {
+      trust: clamp(simulatorScores.trust + choice.effects.trust),
+      clarity: clamp(simulatorScores.clarity + choice.effects.clarity),
+      accountability: clamp(simulatorScores.accountability + choice.effects.accountability),
+      delivery: clamp(simulatorScores.delivery + choice.effects.delivery),
+    };
+    setSimulatorScores(nextScores);
     setSimulatorResponse(choice.response);
     if (choice.nextNodeId) {
       setSimulatorNodeId(choice.nextNodeId);
     } else {
       setSimulatorComplete(true);
+      void trackEvent("simulation_completed", {
+        scenarioId: simulator.id,
+        trustBand: valueBand(nextScores.trust),
+        clarityBand: valueBand(nextScores.clarity),
+        accountabilityBand: valueBand(nextScores.accountability),
+        deliveryBand: valueBand(nextScores.delivery),
+      });
     }
   };
 
@@ -330,7 +463,9 @@ export default function ManagementLab() {
           <span><strong>LeadShift</strong><small>Adaptive management laboratory</small></span>
         </a>
         <div className="topbar__actions">
-          <button className="button button--ghost" onClick={() => setWorkingProfile({ ...naturalProfile })}>Reset to natural</button>
+          <button className="button button--ghost" onClick={reopenAnalyticsChoice}>Analytics {analyticsPreference === "accepted" ? "on" : analyticsPreference === "declined" ? "off" : "choice"}</button>
+          <button className="button button--ghost" onClick={resetSession}>Reset session</button>
+          <button className="button button--ghost" onClick={() => applyWorkingProfile(naturalProfile, "reset_to_natural")}>Reset to natural</button>
           <button className="button button--primary" onClick={shareProfile}>{shareStatus}</button>
         </div>
       </header>
@@ -354,7 +489,7 @@ export default function ManagementLab() {
 
         <nav className="product-tabs" aria-label="LeadShift sections">
           {TABS.map(([id, label]) => (
-            <button key={id} className={activeTab === id ? "product-tab product-tab--active" : "product-tab"} onClick={() => setActiveTab(id)}>
+            <button key={id} className={activeTab === id ? "product-tab product-tab--active" : "product-tab"} onClick={() => changeTab(id)}>
               {label}
             </button>
           ))}
@@ -372,7 +507,7 @@ export default function ManagementLab() {
                 label="Instinctive style"
                 title="Natural default"
                 profile={naturalProfile}
-                action={<button className="text-button" onClick={() => setWorkingProfile({ ...naturalProfile })}>Use now</button>}
+                action={<button className="text-button" onClick={() => applyWorkingProfile(naturalProfile, "natural_profile")}>Use now</button>}
               />
               <ProfileSummary
                 label="Deliberate style"
@@ -386,7 +521,7 @@ export default function ManagementLab() {
                 title="Recommended mode"
                 profile={recommendedProfile}
                 comparison={workingProfile}
-                action={<button className="text-button" onClick={() => setWorkingProfile({ ...recommendedProfile })}>Adopt</button>}
+                action={<button className="text-button" onClick={() => applyWorkingProfile(recommendedProfile, "recommended_profile")}>Adopt</button>}
               />
             </div>
 
@@ -398,10 +533,10 @@ export default function ManagementLab() {
                 </div>
                 <div className="preset-row">
                   {PRESET_PROFILES.map((preset) => (
-                    <button key={preset.name} className="preset-chip" title={preset.description} onClick={() => setWorkingProfile({ ...preset.profile })}>{preset.name}</button>
+                    <button key={preset.name} className="preset-chip" title={preset.description} onClick={() => applyWorkingProfile(preset.profile, `preset:${preset.name}`)}>{preset.name}</button>
                   ))}
                 </div>
-                <ProfileSliders profile={workingProfile} onChange={setWorkingProfile} activeDimension={activeDimension} onActiveDimensionChange={setActiveDimension} />
+                <ProfileSliders profile={workingProfile} onChange={changeWorkingProfile} activeDimension={activeDimension} onActiveDimensionChange={setActiveDimension} />
               </article>
 
               <div className="stacked-column">
@@ -450,7 +585,7 @@ export default function ManagementLab() {
                 <div className="panel__heading"><div><span className="section-kicker">Where this style helps</span><h2>Best-fit situations</h2></div><span className="count-badge">Top 6</span></div>
                 <div className="ranked-situation-list">
                   {rankedSituations.slice(0, 6).map((item, index) => (
-                    <button key={item.situation.id} onClick={() => { setSelectedSituationId(item.situation.id); setActiveTab("context"); }}>
+                    <button key={item.situation.id} onClick={() => { selectSituation(item.situation.id); changeTab("context"); }}>
                       <span>{index + 1}</span>
                       <div><strong>{item.situation.title}</strong><small>{item.situation.category}</small></div>
                       <b>{item.score}%</b>
@@ -462,17 +597,17 @@ export default function ManagementLab() {
               <article className="panel">
                 <div className="panel__heading"><div><span className="section-kicker">Hold all other sliders constant</span><h2>{activeDefinition.name}</h2></div><span className="value-pill">{workingProfile[activeDimension]}</span></div>
                 <label className="full-field"><span>Analyze against situation</span>
-                  <select value={selectedSituationId} onChange={(event) => setSelectedSituationId(event.target.value)}>
+                  <select value={selectedSituationId} onChange={(event) => selectSituation(event.target.value)}>
                     {SITUATIONS.map((situation) => <option key={situation.id} value={situation.id}>{situation.title}</option>)}
                   </select>
                 </label>
                 <p className="helper-copy">{activeDefinition.description}</p>
                 <div className="impact-options">
-                  <button onClick={() => setWorkingProfile((current) => ({ ...current, [activeDimension]: clamp(current[activeDimension] - 10) }))} disabled={workingProfile[activeDimension] === 0}>
+                  <button onClick={() => changeWorkingProfile({ ...workingProfile, [activeDimension]: clamp(workingProfile[activeDimension] - 10) })} disabled={workingProfile[activeDimension] === 0}>
                     <span>−10 toward {activeDefinition.lowLabel}</span><strong className={activeImpact.lowerImpact > 0 ? "impact-positive" : activeImpact.lowerImpact < 0 ? "impact-negative" : ""}>{activeImpact.lowerImpact > 0 ? "+" : ""}{activeImpact.lowerImpact} fit</strong>
                   </button>
                   <div><span>Hold current position</span><strong>{currentFit.score}% fit</strong></div>
-                  <button onClick={() => setWorkingProfile((current) => ({ ...current, [activeDimension]: clamp(current[activeDimension] + 10) }))} disabled={workingProfile[activeDimension] === 100}>
+                  <button onClick={() => changeWorkingProfile({ ...workingProfile, [activeDimension]: clamp(workingProfile[activeDimension] + 10) })} disabled={workingProfile[activeDimension] === 100}>
                     <span>+10 toward {activeDefinition.highLabel}</span><strong className={activeImpact.higherImpact > 0 ? "impact-positive" : activeImpact.higherImpact < 0 ? "impact-negative" : ""}>{activeImpact.higherImpact > 0 ? "+" : ""}{activeImpact.higherImpact} fit</strong>
                   </button>
                 </div>
@@ -511,7 +646,15 @@ export default function ManagementLab() {
               </div>
               <aside className="sticky-column">
                 <ProfileSummary label="Assessment estimate" title="Emerging natural style" profile={assessmentProfile} />
-                <button className="button button--primary button--wide" disabled={answeredAssessmentCount < 3} onClick={() => { setNaturalProfile({ ...assessmentProfile }); setWorkingProfile({ ...assessmentProfile }); setActiveTab("styles"); }}>
+                <button className="button button--primary button--wide" disabled={answeredAssessmentCount < 3} onClick={() => {
+                  setNaturalProfile({ ...assessmentProfile });
+                  applyWorkingProfile(assessmentProfile, "assessment_result");
+                  void trackEvent("assessment_completed", {
+                    answeredCount: answeredAssessmentCount,
+                    archetype: getArchetypeCode(assessmentProfile),
+                  });
+                  changeTab("styles");
+                }}>
                   Apply as my natural style
                 </button>
                 <p className="helper-text">Answer at least three scenarios. Completing all six produces a more stable estimate.</p>
@@ -529,7 +672,7 @@ export default function ManagementLab() {
             <div className="two-column-layout">
               <article className="panel">
                 <label className="full-field"><span>Starting situation</span>
-                  <select value={selectedSituationId} onChange={(event) => setSelectedSituationId(event.target.value)}>
+                  <select value={selectedSituationId} onChange={(event) => selectSituation(event.target.value)}>
                     {SITUATIONS.map((situation) => <option key={situation.id} value={situation.id}>{situation.title}</option>)}
                   </select>
                 </label>
@@ -560,7 +703,7 @@ export default function ManagementLab() {
               <div className="stacked-column">
                 <div className="profile-comparison-grid profile-comparison-grid--two">
                   <ProfileSummary label="Current" title="Working style" profile={workingProfile} />
-                  <ProfileSummary label="Calculated" title="Recommended style" profile={recommendedProfile} comparison={workingProfile} action={<button className="text-button" onClick={() => setWorkingProfile({ ...recommendedProfile })}>Adopt</button>} />
+                  <ProfileSummary label="Calculated" title="Recommended style" profile={recommendedProfile} comparison={workingProfile} action={<button className="text-button" onClick={() => applyWorkingProfile(recommendedProfile, "recommended_profile")}>Adopt</button>} />
                 </div>
                 <article className="panel">
                   <div className="panel__heading"><div><span className="section-kicker">Context-specific profiles</span><h2>Save how you lead different groups</h2></div></div>
@@ -573,7 +716,7 @@ export default function ManagementLab() {
                       <article className="saved-card" key={item.id}>
                         <div><strong>{item.name}</strong><small>{item.description} · {formatDate(item.createdAt)}</small></div>
                         <div className="saved-card__actions">
-                          <button className="text-button" onClick={() => setWorkingProfile({ ...item.profile })}>Load</button>
+                          <button className="text-button" onClick={() => applyWorkingProfile(item.profile, "context_profile")}>Load</button>
                           <button className="text-button text-button--danger" onClick={() => setContextProfiles((current) => current.filter((profile) => profile.id !== item.id))}>Delete</button>
                         </div>
                       </article>
@@ -721,6 +864,19 @@ export default function ManagementLab() {
           </section>
         )}
       </main>
+
+      {analyticsPreference === "unset" && (
+        <aside className="analytics-consent" role="dialog" aria-label="Anonymous analytics preference">
+          <div>
+            <strong>Help improve LeadShift?</strong>
+            <p>Management answers stay in this browser tab. With permission, LeadShift records anonymous feature-use events and broad value bands—not journal text, team comments, names, employers, or exact slider profiles.</p>
+          </div>
+          <div className="analytics-consent__actions">
+            <button className="button button--ghost" onClick={() => chooseAnalytics("declined")}>No thanks</button>
+            <button className="button button--primary" onClick={() => chooseAnalytics("accepted")}>Allow anonymous analytics</button>
+          </div>
+        </aside>
+      )}
 
       <footer className="footer">
         <strong>LeadShift</strong>

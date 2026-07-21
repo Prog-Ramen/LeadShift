@@ -23,32 +23,93 @@ Six scenario-based questions estimate a natural style from choices rather than r
 
 ### Situation builder
 
-A dynamic recommendation combines a curated situation with:
+A dynamic recommendation combines a curated situation with team experience, confidence, trust, urgency, failure consequence, uncertainty, reversibility, and the need for innovation.
 
-- Team experience
-- Team confidence
-- Trust level
-- Urgency
-- Consequence of failure
-- Degree of uncertainty
-- Decision reversibility
-- Need for innovation
+### History, team comparison, journal, and simulator
 
-Users can save context-specific working profiles for senior engineers, junior employees, cross-functional partners, underperformers, and other recurring contexts.
+LeadShift includes temporary style snapshots, context profiles, a local team-perception preview, a decision journal, and branching management simulations.
 
-### History and reflection
+## Privacy and browser storage
 
-- Style snapshots over time.
-- Timeline trend summaries.
-- A decision journal connecting chosen style, intended outcome, actual outcome, and reflection.
+LeadShift v0.3.0 separates temporary management data from optional product analytics:
 
-### Team perception
+- Management profiles, assessments, snapshots, team-perception entries, journal entries, and simulator progress are stored in `sessionStorage`.
+- The workspace survives refreshes in the same tab but is removed when that browser tab/session ends.
+- A visible **Reset session** control immediately clears the workspace.
+- The application removes the old v0.2.0 `localStorage` workspace automatically.
+- A share URL can still contain a working-style profile when the user explicitly chooses **Share working style**.
+- Only the analytics consent preference persists in `localStorage`.
 
-The MVP includes a local anonymous-response preview that compares self-perception with an aggregated team view. A real production deployment would require a secure backend, authentication, minimum response thresholds, and privacy controls.
+This prevents one person using a shared browser from automatically seeing the previous person's management workspace.
 
-### Management simulator
+## Optional anonymous analytics
 
-Branching scenarios show likely trade-offs across trust, clarity, accountability, and delivery. The simulations are educational models, not predictions about a specific person.
+Visitors receive a clear opt-in choice. No usage events are sent until they select **Allow anonymous analytics**.
+
+Collected events can include:
+
+- Sections viewed
+- Assessment start and completion
+- Situation selection
+- Debounced slider adjustments using broad 20-point bands
+- Recommendation or preset adoption
+- Snapshot, profile, perception, and journal feature use
+- Simulation start and completion
+
+The analytics client and endpoint intentionally do **not** send:
+
+- Journal text
+- Team comments
+- Names or email addresses
+- Employer or team names
+- Exact complete slider profiles
+- Raw assessment answers
+- Conversation text
+- IP addresses or user-agent strings added by the application
+
+The API validates event names, limits payload size and property counts, and truncates strings. Analytics failures never block the product.
+
+### Analytics output modes
+
+Configure with `LEADSHIFT_ANALYTICS_MODE`:
+
+- `disabled`: accept no stored analytics
+- `console`: write sanitized events to application logs
+- `file`: append NDJSON records to a file
+- `webhook`: send sanitized events to `LEADSHIFT_ANALYTICS_WEBHOOK_URL`
+
+Docker Compose defaults to `file` mode and stores records in a named volume at:
+
+```text
+/app/data/analytics/events.ndjson
+```
+
+View recent records:
+
+```bash
+docker compose exec leadshift sh -lc 'tail -n 20 /app/data/analytics/events.ndjson'
+```
+
+View an aggregate summary without exposing journal or feedback content:
+
+```bash
+docker compose exec leadshift \
+  node scripts/summarize-analytics.mjs /app/data/analytics/events.ndjson
+```
+
+Disable collection server-side regardless of browser consent:
+
+```bash
+LEADSHIFT_ANALYTICS_MODE=disabled docker compose up --build
+```
+
+Use a webhook instead:
+
+```bash
+LEADSHIFT_ANALYTICS_MODE=webhook \
+LEADSHIFT_ANALYTICS_WEBHOOK_URL=https://analytics.example.com/events \
+docker compose up --build
+```
 
 ## Technology
 
@@ -57,9 +118,8 @@ Branching scenarios show likely trade-offs across trust, clarity, accountability
 - TypeScript
 - Plain responsive CSS
 - Dependency-free SVG radar charts
-- Browser `localStorage` persistence
 - Deterministic and inspectable recommendation logic
-- No database, account, API key, or AI model required for the MVP
+- Node-based analytics route with no added runtime dependency
 
 ## Requirements
 
@@ -67,14 +127,10 @@ Branching scenarios show likely trade-offs across trust, clarity, accountability
 - Node.js 22 LTS recommended
 - npm 10 or newer
 
-The repository contains `.nvmrc`, so with `nvm` installed you can run:
-
 ```bash
 nvm install
 nvm use
 ```
-
-The project `.npmrc` points to the public npm registry, preventing accidental use of an inaccessible internal registry.
 
 ## Run locally
 
@@ -85,6 +141,8 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+Local development defaults to `console` analytics mode. Events are emitted only after opt-in.
+
 ## Production build
 
 ```bash
@@ -92,55 +150,26 @@ npm run verify
 npm start
 ```
 
-`npm run verify` runs ESLint, TypeScript checking through the Next.js build, the optimized production build, and preparation of a self-contained standalone runtime.
+## Docker
 
-## Docker production image
-
-The production image uses a multi-stage Node 22 Alpine build, Next.js standalone output, a non-root runtime user, and a container health check.
+The Dockerfile avoids BuildKit-only `RUN --mount` syntax, so it works with both legacy builders and BuildKit. The production image uses Node 22 Alpine, Next.js standalone output, a non-root runtime user, and a health check.
 
 ```bash
-docker build -t leadshift .
-docker run --rm --name leadshift -p 3000:3000 leadshift
+docker compose up --build -d
+docker compose ps
+docker compose logs -f leadshift
 ```
 
-Or use Compose:
+Open `http://localhost:3000` or `http://<server-ip>:3000`.
 
-```bash
-docker compose up --build
-```
-
-Open `http://localhost:3000`.
-
-## Docker development mode
-
-```bash
-docker build -f Dockerfile.dev -t leadshift-dev .
-docker run --rm -p 3000:3000 \
-  -v "$PWD:/app" \
-  -v /app/node_modules \
-  -v /app/.next \
-  leadshift-dev
-```
-
-## Recommendation model
-
-Each curated situation defines an ideal profile and higher weights for dimensions that matter most. Context controls create a second target profile. LeadShift blends the curated target with the context target and then calculates a weighted distance from the current working style.
-
-Explicit rules detect combinations such as:
-
-- High challenge with low visible care
-- High autonomy with low context visibility
-- Exploration paired with extreme failure prevention
-- Commanding posture paired with unclear shared authority
-- A temporary crisis adaptation that overshoots or persists too long
-
-The language shown to users comes from transparent action templates. No language model secretly determines the score.
+The service binds to `0.0.0.0:3000` inside the container and publishes host port 3000.
 
 ## Main project structure
 
 ```text
 src/
   app/
+    api/events/route.ts
     globals.css
     layout.tsx
     page.tsx
@@ -150,33 +179,24 @@ src/
     ProfileSummary.tsx
     RadarChart.tsx
   data/
-    archetypes.ts
-    assessment.ts
-    context.ts
-    dimensions.ts
-    simulator.ts
-    situations.ts
   lib/
+    analytics.ts
     engine.ts
+    session-storage.ts
     types.ts
 scripts/
   prepare-standalone.mjs
+  summarize-analytics.mjs
 Dockerfile
 Dockerfile.dev
 docker-compose.yml
 ```
 
-## Production next steps
+## Production considerations
 
-The current MVP intentionally keeps all personal data in the browser. A commercial version should add:
+For a commercial deployment, add a privacy notice reviewed for the jurisdictions where the product is offered, a documented retention period, deletion and export controls, rate limiting, CSRF/origin controls as appropriate, and authenticated organization features before collecting identifiable data.
 
-- Secure user accounts and encrypted cloud persistence
-- Organization workspaces and role-based access
-- Anonymous survey links with minimum response thresholds
-- Audit logs, deletion controls, and data-retention policies
-- Admin-authored situation libraries
-- Exportable coaching reports
-- A carefully grounded AI explanation layer using the deterministic engine as its source of truth
+Do not silently collect decision-journal text or team feedback as product analytics. If those features later become cloud-backed, provide explicit purpose-specific consent, access controls, encryption, retention limits, and deletion controls.
 
 ## Important limitation
 
