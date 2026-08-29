@@ -21,9 +21,30 @@ const ALLOWED_EVENTS = new Set([
   "journal_entry_saved",
   "simulation_started",
   "simulation_completed",
+  "sim_debrief_saved",
 ]);
 
-const MAX_BODY_BYTES = 16_384;
+const MAX_BODY_BYTES = 8_192;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 60;
+const rateLimits = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimits.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimits.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    if (rateLimits.size > 10_000) {
+      for (const [key, val] of rateLimits) {
+        if (now > val.resetAt) rateLimits.delete(key);
+      }
+    }
+    return false;
+  }
+  if (entry.count >= RATE_LIMIT_MAX) return true;
+  entry.count++;
+  return false;
+}
 const MAX_PROPERTIES = 20;
 
 type Primitive = string | number | boolean | null;
@@ -84,6 +105,14 @@ async function writeEvent(event: AnalyticsEvent): Promise<void> {
 }
 
 export async function POST(request: Request) {
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+    request.headers.get("x-real-ip") ??
+    "unknown";
+  if (isRateLimited(ip)) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
+
   const raw = await request.text();
   if (Buffer.byteLength(raw, "utf8") > MAX_BODY_BYTES) {
     return NextResponse.json({ error: "Event payload too large" }, { status: 413 });

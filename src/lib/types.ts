@@ -39,7 +39,7 @@ export interface Archetype {
   description: string;
   strengths: string[];
   watchouts: string[];
-  center: Pick<ManagementProfile, "focus" | "authority" | "operatingMode" | "change">;
+  center: Pick<ManagementProfile, "focus" | "authority" | "care" | "challenge" | "operatingMode" | "change">;
 }
 
 export interface Situation {
@@ -170,6 +170,7 @@ export interface SimulatorNode {
   id: string;
   prompt: string;
   choices: SimulatorChoice[];
+  end?: boolean;
 }
 
 export interface SimulatorScenario {
@@ -178,4 +179,9 @@ export interface SimulatorScenario {
   description: string;
   startNodeId: string;
   nodes: SimulatorNode[];
+}
+
+export interface TrackProgress {
+  trackId: string;
+  startDate: string; // ISO date string
 }

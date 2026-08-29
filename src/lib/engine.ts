@@ -48,12 +48,15 @@ export const blendProfiles = (
     return profile;
   }, {} as ManagementProfile);
 
-export const getArchetypeCode = (profile: ManagementProfile) =>
-  `${profile.focus < 50 ? "H" : "R"}${
-    profile.authority < 50 ? "A" : "D"
-  }${profile.operatingMode < 50 ? "S" : "E"}${
-    profile.change < 50 ? "I" : "T"
-  }`;
+export const getArchetypeCode = (profile: ManagementProfile) => {
+  const letter1 = profile.focus < 50 ? "H" : "R";
+  const directiveness = (profile.authority + profile.posture + (100 - profile.decisionStyle)) / 3;
+  const letter2 = directiveness < 50 ? "A" : "D";
+  const letter3 = profile.care >= profile.challenge ? "N" : "C";
+  const explorativeness = (profile.change + profile.risk + profile.operatingMode) / 3;
+  const letter4 = explorativeness < 50 ? "S" : "X";
+  return `${letter1}${letter2}${letter3}${letter4}`;
+};
 
 export interface ArchetypeMatch {
   archetype: Archetype;
@@ -66,7 +69,7 @@ export const getArchetypeMatches = (
   profile: ManagementProfile,
 ): ArchetypeMatch[] => {
   return ARCHETYPES.map((archetype) => {
-    const keys = ["focus", "authority", "operatingMode", "change"] as const;
+    const keys = ["focus", "authority", "care", "challenge", "operatingMode", "change"] as const;
     const squaredDistance = keys.reduce((total, key) => {
       const delta = profile[key] - archetype.center[key];
       return total + delta * delta;

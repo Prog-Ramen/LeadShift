@@ -15,7 +15,8 @@ export type AnalyticsEventName =
   | "context_profile_saved"
   | "journal_entry_saved"
   | "simulation_started"
-  | "simulation_completed";
+  | "simulation_completed"
+  | "sim_debrief_saved";
 
 export type AnalyticsProperties = Record<
   string,

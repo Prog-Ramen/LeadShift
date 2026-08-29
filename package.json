@@ -22,7 +22,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
-    "typescript": "^5"
+    "typescript": "5.8.2"
   },
   "description": "Adaptive situational management laboratory with assessments, context recommendations, feedback comparison, journaling, and simulations.",
   "overrides": {

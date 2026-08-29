@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     image: leadshift:0.3.0
     ports:
-      - "3000:3000"
+      - "3001:3001"
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"

@@ -19,7 +19,7 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3000 \
+    PORT=3001 \
     HOSTNAME=0.0.0.0 \
     LEADSHIFT_ANALYTICS_MODE=file \
     LEADSHIFT_ANALYTICS_FILE=/app/data/analytics/events.ndjson
