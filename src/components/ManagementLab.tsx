@@ -32,7 +32,16 @@ import {
   scoreSituation,
   type ConversationTone,
 } from "@/lib/engine";
-import { OnboardingGate, Tutorial } from "@/components/Tutorial";
+import { OnboardingGate } from "@/components/Tutorial";
+import { WizardFlow } from "@/components/WizardFlow";
+import { WizardNaturalPhase } from "@/components/WizardNaturalPhase";
+import { WizardWorkingPhase } from "@/components/WizardWorkingPhase";
+import { WizardContextPhase } from "@/components/WizardContextPhase";
+import { StylesPage } from "@/components/StylesPage";
+import { ArchetypesPage } from "@/components/ArchetypesPage";
+import { decodeTripleProfile, encodeTripleProfile } from "@/lib/url-compression";
+import { TEMPLATES } from "@/data/templates";
+import type { TripleProfile } from "@/lib/url-compression";
 import {
   clearAnalyticsPreference,
   getAnalyticsPreference,
@@ -62,6 +71,7 @@ const TABS = [
   ["practice", "Practice"],
   ["style", "My Style"],
   ["journey", "Journey"],
+  ["archetypes", "Archetypes"],
   ["reflect", "Reflect"],
 ] as const;
 
@@ -71,6 +81,7 @@ type StoredWorkspace = {
   activeTab: TabId;
   naturalProfile: ManagementProfile;
   workingProfile: ManagementProfile;
+  recommendedProfile: ManagementProfile;
   context: SituationContext;
   selectedSituationId: string;
   assessmentAnswers: Record<string, string>;
@@ -171,7 +182,12 @@ export default function ManagementLab() {
   const [analyticsPreference, setAnalyticsPreferenceState] = useState<AnalyticsPreference>("unset");
   const [hydrated, setHydrated] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
-  const [visitState, setVisitState] = useState<"gate" | "tutorial" | "app">("gate");
+  const [visitState, setVisitState] = useState<"gate" | "wizard" | "app">("gate");
+  const [wizardRecommended, setWizardRecommended] = useState<ManagementProfile>(DEFAULT_PROFILE);
+  const [experiencedCode, setExperiencedCode] = useState("");
+  const [codeError, setCodeError] = useState("");
+  const [showTemplateSelection, setShowTemplateSelection] = useState(false);
+  const [editingPhase, setEditingPhase] = useState<"natural" | "working" | "recommended" | null>(null);
   const sliderAnalyticsTimer = useRef<number | null>(null);
   const sessionStartedTracked = useRef(false);
   const assessmentStartedTracked = useRef(false);
@@ -181,6 +197,7 @@ export default function ManagementLab() {
     const stored = loadSessionWorkspace<StoredWorkspace>();
     const preference = getAnalyticsPreference();
     let sharedProfile: ManagementProfile | null = null;
+    let tripleProfile: TripleProfile | null = null;
     try {
       const encoded = new URLSearchParams(window.location.search).get("style");
       if (encoded) {
@@ -191,6 +208,10 @@ export default function ManagementLab() {
             return profile;
           }, {} as ManagementProfile);
         }
+      }
+      const codeParam = new URLSearchParams(window.location.search).get("code");
+      if (codeParam) {
+        tripleProfile = decodeTripleProfile(codeParam);
       }
     } catch {
       // Local persistence and shared URLs are optional.
@@ -220,8 +241,20 @@ export default function ManagementLab() {
       if (stored.simReflection !== undefined) setSimReflection(stored.simReflection);
       if (stored.simCommitment !== undefined) setSimCommitment(stored.simCommitment);
       if (stored.trackProgress !== undefined) setTrackProgress(stored.trackProgress);
+      if (stored.recommendedProfile) setWizardRecommended(stored.recommendedProfile);
       setAnalyticsPreferenceState(preference);
       setHydrated(true);
+
+      // Handle URL code param first
+      if (tripleProfile) {
+        setNaturalProfile(tripleProfile.natural);
+        setWorkingProfile(tripleProfile.working);
+        setWizardRecommended(tripleProfile.recommended);
+        window.localStorage.setItem("leadshift:visited", "1");
+        setVisitState("app");
+        return;
+      }
+
       const visited = window.localStorage.getItem("leadshift:visited");
       if (!visited) {
         setVisitState("gate");
@@ -241,6 +274,7 @@ export default function ManagementLab() {
       activeTab,
       naturalProfile,
       workingProfile,
+      recommendedProfile: wizardRecommended,
       context,
       selectedSituationId,
       assessmentAnswers,
@@ -265,6 +299,7 @@ export default function ManagementLab() {
     activeTab,
     naturalProfile,
     workingProfile,
+    wizardRecommended,
     context,
     selectedSituationId,
     assessmentAnswers,
@@ -354,9 +389,67 @@ export default function ManagementLab() {
   const resetSession = () => {
     void trackEvent("session_reset");
     clearSessionWorkspace();
+    window.localStorage.removeItem("leadshift:visited");
     const url = new URL(window.location.href);
     url.searchParams.delete("style");
+    url.searchParams.delete("code");
     window.location.replace(`${url.pathname}${url.search}${url.hash}`);
+  };
+
+  const handleExperienced = (code: string) => {
+    if (!code.trim()) {
+      setShowTemplateSelection(true);
+      setCodeError("");
+      return;
+    }
+    const triple = decodeTripleProfile(code.trim());
+    if (triple) {
+      setNaturalProfile(triple.natural);
+      setWorkingProfile(triple.working);
+      setWizardRecommended(triple.recommended);
+      window.localStorage.setItem("leadshift:visited", "1");
+      setVisitState("app");
+    } else {
+      setCodeError("Invalid code. Try a template or the guided wizard.");
+      setShowTemplateSelection(false);
+    }
+  };
+
+  const handleTemplateSelect = (templateId: string) => {
+    const template = TEMPLATES.find((t) => t.id === templateId);
+    if (template) {
+      setNaturalProfile(template.profiles.natural);
+      setWorkingProfile(template.profiles.working);
+      setWizardRecommended(template.profiles.recommended);
+      window.localStorage.setItem("leadshift:visited", "1");
+      setShowTemplateSelection(false);
+      setVisitState("app");
+    }
+  };
+
+  const handleWizardComplete = (triple: TripleProfile) => {
+    setNaturalProfile(triple.natural);
+    setWorkingProfile(triple.working);
+    setWizardRecommended(triple.recommended);
+    window.localStorage.setItem("leadshift:visited", "1");
+    setVisitState("app");
+  };
+
+  const closeEditWizard = () => setEditingPhase(null);
+
+  const handleEditNaturalComplete = (profile: ManagementProfile) => {
+    setNaturalProfile(profile);
+    closeEditWizard();
+  };
+
+  const handleEditWorkingComplete = (profile: ManagementProfile) => {
+    setWorkingProfile(profile);
+    closeEditWizard();
+  };
+
+  const handleEditRecommendedComplete = (profile: ManagementProfile) => {
+    setWizardRecommended(profile);
+    closeEditWizard();
   };
 
   const selectedSituation =
@@ -400,9 +493,9 @@ export default function ManagementLab() {
   const simulatorNode = simulator.nodes.find((node) => node.id === simulatorNodeId);
 
   const shareProfile = async () => {
-    const encoded = DIMENSIONS.map((dimension) => Math.round(workingProfile[dimension.key])).join(".");
+    const code = encodeTripleProfile({ natural: naturalProfile, working: workingProfile, recommended: wizardRecommended });
     const url = new URL(window.location.href);
-    url.searchParams.set("style", encoded);
+    url.searchParams.set("code", code);
     try {
       await navigator.clipboard.writeText(url.toString());
       setShareStatus("Copied!");
@@ -566,8 +659,37 @@ export default function ManagementLab() {
   const reflectDone = journal.length > 0;
 
   if (!hydrated) return null;
-  if (visitState === "gate") return <OnboardingGate onNew={() => setVisitState("tutorial")} onExperienced={() => { window.localStorage.setItem("leadshift:visited", "1"); setVisitState("app"); }} darkMode={darkMode} />;
-  if (visitState === "tutorial") return <Tutorial onComplete={(profile) => { setNaturalProfile(profile); setWorkingProfile(profile); window.localStorage.setItem("leadshift:visited", "1"); setVisitState("app"); }} darkMode={darkMode} />;
+  if (visitState === "gate") {
+    const isExperiencedFlow = showTemplateSelection || experiencedCode || codeError;
+    if (showTemplateSelection) {
+      return (
+        <OnboardingGate
+          onNew={() => setVisitState("wizard")}
+          onExperienced={handleExperienced}
+          onWizard={() => { setShowTemplateSelection(false); setExperiencedCode(""); setCodeError(""); }}
+          showTemplateSelection
+          templates={TEMPLATES.map((t) => ({ id: t.id, name: t.name, description: t.description }))}
+          onTemplateSelect={handleTemplateSelect}
+          darkMode={darkMode}
+        />
+      );
+    }
+    return (
+      <OnboardingGate
+        onNew={() => setVisitState("wizard")}
+        onExperienced={handleExperienced}
+        onWizard={() => { setShowTemplateSelection(false); setExperiencedCode(""); setCodeError(""); }}
+        showCodeInput
+        codeValue={experiencedCode}
+        onCodeChange={setExperiencedCode}
+        codeError={codeError}
+        darkMode={darkMode}
+      />
+    );
+  }
+  if (visitState === "wizard") {
+    return <WizardFlow onComplete={handleWizardComplete} darkMode={darkMode} />;
+  }
 
   return (
     <div className="app-shell" data-theme={darkMode ? "dark" : "light"}>
@@ -835,188 +957,25 @@ export default function ManagementLab() {
         {/* ── MY STYLE TAB ── */}
         {activeTab === "style" && (
           <section className="tab-stack">
-            {/* Three-column layout: each card sits above its own controls */}
-            <div className="style-master-grid">
-
-              {/* Column 1 — Natural default (anchor, no sliders) */}
-              <div className="style-master-col">
-                <ProfileSummary
-                  label="Instinctive style"
-                  title="Natural default"
-                  profile={naturalProfile}
-                  action={<button className="text-button" onClick={() => applyWorkingProfile(naturalProfile, "natural_profile")}>Use now</button>}
-                  info={{
-                    what: "Your baseline management style — how you tend to lead when you're not consciously adapting. Set from your assessment answers.",
-                    why: "Use this as your anchor. It's not good or bad — it's your starting point. Knowing it helps you spot when you're drifting or stretching deliberately.",
-                  }}
-                />
-                {([...overcorrectionWarnings, ...profileWarnings]).length > 0 && (
-                  <div className="warning-stack">
-                    {[...overcorrectionWarnings, ...profileWarnings].slice(0, 3).map((warning) => (
-                      <article className={`warning-card warning-card--${warning.severity}`} key={warning.id}>
-                        <span>{warning.severity === "watch" ? "Watch" : "Note"}</span>
-                        <div><strong>{warning.title}</strong><p>{warning.body}</p></div>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Column 2 — Recommended mode + situation context sliders */}
-              <div className="style-master-col">
-                <ProfileSummary
-                  label="Situation model"
-                  title="Recommended mode"
-                  profile={recommendedProfile}
-                  comparison={workingProfile}
-                  currentLabel="Situation ideal"
-                  comparisonLabel="Working now"
-                  action={<button className="text-button" onClick={() => applyWorkingProfile(recommendedProfile, "recommended_profile")}>Adopt</button>}
-                  info={{
-                    what: "The style that research suggests fits the situation selected below. Derived from the situation's weighted dimension profile — not a universal ideal.",
-                    ghost: "Your current working style. Where this solid shape differs from the outline is the gap you'd need to close to match the situation's demands.",
-                    why: "Use this as directional guidance, not a prescription. A high gap on a weighted dimension (like authority in a turnaround) is the priority to address.",
-                  }}
-                />
-                <article className="panel">
-                  <div className="panel__heading">
-                    <div><span className="section-kicker">What's your situation?</span><h2>Context</h2></div>
-                    <span className={`fit-badge fit-badge--${scoreClass(currentFit.score)}`}>{fitLabel(currentFit.score)} · {currentFit.score}%</span>
-                  </div>
-                  <label className="full-field"><span>Starting situation</span>
-                    <select value={selectedSituationId} onChange={(event) => selectSituation(event.target.value)}>
-                      {SITUATIONS.map((situation) => <option key={situation.id} value={situation.id}>{situation.title}</option>)}
-                    </select>
-                  </label>
-                  <div className="situation-intro"><strong>{selectedSituation.title}</strong><p>{selectedSituation.summary}</p></div>
-                  <div className="context-control-list">
-                    {CONTEXT_DEFINITIONS.map((definition) => {
-                      const value = context[definition.key];
-                      return (
-                        <div className="context-control" key={definition.key}>
-                          <div><label htmlFor={`context-${definition.key}`}>{definition.name}</label><span>{value}</span></div>
-                          <input
-                            id={`context-${definition.key}`}
-                            type="range" min="0" max="100" value={value}
-                            style={{ "--slider-value": `${value}%` } as React.CSSProperties}
-                            onChange={(event) => setContext((current) => ({ ...current, [definition.key]: Number(event.target.value) } as SituationContext))}
-                          />
-                          <div className="range-labels"><span>{definition.lowLabel}</span><span>{definition.highLabel}</span></div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </article>
-              </div>
-
-              {/* Column 3 — Current working mode + style dimension sliders */}
-              <div className="style-master-col">
-                <ProfileSummary
-                  label="Deliberate style"
-                  title="Current working mode"
-                  profile={workingProfile}
-                  comparison={naturalProfile}
-                  currentLabel="Working now"
-                  comparisonLabel="Natural default"
-                  action={<button className="text-button" onClick={() => setNaturalProfile({ ...workingProfile })}>Make natural</button>}
-                  info={{
-                    what: "The style you're actively working with right now — adjusted by you via the sliders below or adopted from a situation recommendation.",
-                    ghost: "Your natural default. Where the solid shape extends beyond the outline, you're stretching beyond instinct.",
-                    why: "Compare this to your natural default to see where you're making conscious adaptations. Large gaps can be unsustainable long-term.",
-                  }}
-                />
-                <article className="panel">
-                  <div className="panel__heading">
-                    <div><span className="section-kicker">Adjust dimensions</span><h2>Your style</h2></div>
-                    <div className="preset-row" style={{ margin: 0 }}>
-                      {PRESET_PROFILES.map((preset) => (
-                        <button key={preset.name} className="preset-chip" title={preset.description} onClick={() => applyWorkingProfile(preset.profile, `preset:${preset.name}`)}>{preset.name}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="slider-radar-layout">
-                    <div className="slider-radar-chart">
-                      <RadarChart
-                        profile={workingProfile}
-                        comparison={recommendedProfile}
-                        activeDimension={activeDimension}
-                      />
-                      {activeDimension && (() => {
-                        const def = DIMENSIONS.find((d) => d.key === activeDimension);
-                        return def ? (
-                          <div className="radar-active-hint">
-                            <strong>{def.name}</strong>
-                            <span>{workingProfile[activeDimension] <= 40 ? def.lowMeaning : workingProfile[activeDimension] >= 60 ? def.highMeaning : def.description}</span>
-                          </div>
-                        ) : null;
-                      })()}
-                    </div>
-                    <ProfileSliders profile={workingProfile} onChange={changeWorkingProfile} activeDimension={activeDimension} onActiveDimensionChange={setActiveDimension} />
-                  </div>
-                  <div className="style-actions-row">
-                    <button className="button button--primary" onClick={() => applyWorkingProfile(recommendedProfile, "recommended_profile")}>Adopt recommended</button>
-                    <button className="text-button" onClick={() => applyWorkingProfile(naturalProfile, "reset_to_natural")}>Reset to natural</button>
-                  </div>
-                </article>
-                <article className="panel">
-                  <div className="panel__heading"><div><h2>Highest-value actions</h2></div></div>
-                  <div className="action-list">
-                    {behaviorRecommendations.map((item) => (
-                      <article key={item.key} className="action-card">
-                        <span>{item.delta > 0 ? `+${Math.round(item.delta)}` : Math.round(item.delta)}</span>
-                        <div><strong>{item.dimensionName}: toward {item.targetLabel}</strong><p>{item.action}</p></div>
-                      </article>
-                    ))}
-                  </div>
-                  <div className="conversation-card">
-                    <div className="conversation-card__head">
-                      <strong>Conversation example</strong>
-                      <select value={conversationTone} onChange={(event) => setConversationTone(event.target.value as ConversationTone)}>
-                        <option value="direct">More direct</option>
-                        <option value="supportive">More supportive</option>
-                        <option value="concise">More concise</option>
-                        <option value="collaborative">More collaborative</option>
-                      </select>
-                    </div>
-                    <blockquote>"{getConversationExample(workingProfile, recommendedProfile, conversationTone)}"</blockquote>
-                  </div>
-                </article>
-              </div>
-
-            </div>
-
-            {/* Best-fit situations */}
-            <div className="section-heading-slim">
-              <h2>Best-fit situations</h2>
-              <span className="count-badge">Top 6</span>
-            </div>
-            <div className="ranked-situation-list">
-              {rankedSituations.slice(0, 6).map((item, index) => (
-                <button key={item.situation.id} onClick={() => { selectSituation(item.situation.id); }}>
-                  <span>{index + 1}</span>
-                  <div><strong>{item.situation.title}</strong><small>{item.situation.category}</small></div>
-                  <b>{item.score}%</b>
-                </button>
-              ))}
-            </div>
-
-            <ArchetypeSimulator />
-
-            <div className="next-step-card">
-              <div>
-                <strong>Applied your insights?</strong>
-                <p>Log what happened in a real situation and track how your style evolves.</p>
-              </div>
-              <button className="button button--ghost" onClick={() => changeTab("reflect")}>
-                Go to Reflect →
-              </button>
-            </div>
+            <StylesPage
+              natural={naturalProfile}
+              working={workingProfile}
+              recommended={wizardRecommended}
+              onEditNatural={() => setEditingPhase("natural")}
+              onEditWorking={() => setEditingPhase("working")}
+              onEditRecommended={() => setEditingPhase("recommended")}
+              onGoToPractice={() => changeTab("practice")}
+              onGoToJourney={() => changeTab("journey")}
+              onGoToReflect={() => changeTab("reflect")}
+              onShare={() => shareProfile()}
+              darkMode={darkMode}
+            />
           </section>
         )}
 
         {/* ── JOURNEY TAB ── */}
         {activeTab === "journey" && (
-          <section className="tab-stack">
+          <section className="tab-stack tab-stack--compact journey-tab">
 
             {/* Track picker */}
             {!trackProgress && (
@@ -1274,6 +1233,13 @@ export default function ManagementLab() {
           </section>
         )}
 
+        {/* ── ARCHETYPES TAB ── */}
+        {activeTab === "archetypes" && (
+          <section className="tab-stack tab-stack--compact">
+            <ArchetypesPage darkMode={darkMode} />
+          </section>
+        )}
+
         {/* ── REFLECT TAB ── */}
         {activeTab === "reflect" && (
           <section className="tab-stack">
@@ -1466,6 +1432,43 @@ export default function ManagementLab() {
         <span>A reflective learning tool—not a clinical assessment or a substitute for team feedback.</span>
         <button className="text-button" onClick={reopenAnalyticsChoice}>Analytics {analyticsPreference === "accepted" ? "on" : "off"}</button>
       </footer>
+
+      {/* ── Edit wizard overlay ── */}
+      {editingPhase && (
+        <div className="wizard-overlay" data-theme={darkMode ? "dark" : "light"}>
+          <div className="wizard-overlay__header">
+            <h3 className="wizard-overlay__title">
+              {editingPhase === "natural" ? "Edit Natural Default" : editingPhase === "working" ? "Edit Working Mode" : "Edit Recommended"}
+            </h3>
+            <button className="wizard-overlay__close" onClick={closeEditWizard}>Close</button>
+          </div>
+          <div className="wizard-overlay__body">
+            {editingPhase === "natural" && (
+              <WizardNaturalPhase
+                initialProfile={{ ...naturalProfile }}
+                onComplete={handleEditNaturalComplete}
+                darkMode={darkMode}
+              />
+            )}
+            {editingPhase === "working" && (
+              <WizardWorkingPhase
+                naturalProfile={naturalProfile}
+                initialWorking={workingProfile}
+                onComplete={handleEditWorkingComplete}
+                darkMode={darkMode}
+              />
+            )}
+            {editingPhase === "recommended" && (
+              <WizardContextPhase
+                naturalProfile={naturalProfile}
+                workingProfile={workingProfile}
+                onComplete={handleEditRecommendedComplete}
+                darkMode={darkMode}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
