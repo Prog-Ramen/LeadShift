@@ -142,17 +142,6 @@ export interface ContextProfile {
   createdAt: string;
 }
 
-export interface JournalEntry {
-  id: string;
-  createdAt: string;
-  situation: string;
-  chosenStyle: string;
-  intendedOutcome: string;
-  actualOutcome: string;
-  reflection: string;
-  profile: ManagementProfile;
-}
-
 export interface SimulatorChoice {
   id: string;
   label: string;

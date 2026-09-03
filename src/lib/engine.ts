@@ -579,21 +579,6 @@ export const getHistoryInsight = (snapshots: StyleSnapshot[]): string => {
   return `Across your recorded snapshots, you have become ${phrases.join(" and ")}.`;
 };
 
-export const getJournalInsight = (entries: JournalEntry[]): string => {
-  if (entries.length < 2) return "Record at least two decisions to begin identifying recurring leadership patterns.";
-  const incidentMentions = entries.filter((entry) => /incident|outage|crisis|urgent/i.test(entry.situation));
-  const planningMentions = entries.filter((entry) => /plan|roadmap|strategy|project/i.test(entry.situation));
-  if (incidentMentions.length >= 2) {
-    return "Your journal contains repeated high-urgency decisions. Compare whether participative discussion improved diagnosis or delayed incident authority.";
-  }
-  if (planningMentions.length >= 2) {
-    return "Planning and strategy decisions recur in your journal. Look for whether participation improved commitment and where it slowed a time-bound call.";
-  }
-  const average = averageProfiles(entries.map((entry) => entry.profile));
-  const match = getArchetypeMatches(average)[0];
-  return `Across recorded decisions, you most often operated like a ${match.archetype.name}. Review outcomes that required a different mode.`;
-};
-
 export const describeBand = (value: number) => {
   if (value <= 20) return "Strongly left";
   if (value <= 40) return "Leans left";
