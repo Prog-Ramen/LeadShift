@@ -6,7 +6,6 @@ import type {
   ContextKey,
   DimensionKey,
   FitPenalty,
-  JournalEntry,
   ManagementProfile,
   ProfileWarning,
   Situation,

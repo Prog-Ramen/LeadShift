@@ -700,21 +700,7 @@ export default function ManagementLab() {
                   </div>
                   <div className="simulator-sidebar">
                     <div className="simulator-radar-panel">
-                      <RadarChart
-                        profile={{
-                          trust: simulatorScores.trust,
-                          clarity: simulatorScores.clarity,
-                          accountability: simulatorScores.accountability,
-                          delivery: simulatorScores.delivery,
-                          focus: 50,
-                          authority: 50,
-                          care: 50,
-                          challenge: 50,
-                          operatingMode: 50,
-                          change: 50,
-                        }}
-                        compact
-                      />
+                      <RadarChart profile={workingProfile} compact />
                     </div>
                     <div className="simulator-bars">
                       {Object.entries(simulatorScores).map(([key, value]) => (
