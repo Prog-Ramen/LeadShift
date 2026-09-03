@@ -64,6 +64,38 @@
 
   /* Motion */
   --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ── Spacing scale (px) ── */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 12px;
+  --space-6: 14px;
+  --space-7: 16px;
+  --space-8: 18px;
+  --space-9: 20px;
+  --space-10: 22px;
+  --space-11: 24px;
+  --space-12: 28px;
+  --space-13: 32px;
+  --space-14: 38px;
+  --space-15: 48px;
+  --space-16: 58px;
+  --space-17: 64px;
+
+  /* ── Typography scale (rem) ── */
+  --text-xs: 0.65rem;
+  --text-sm: 0.72rem;
+  --text-base: 0.84rem;
+  --text-lg: 0.92rem;
+  --text-xl: 1rem;
+  --text-2xl: 1.1rem;
+  --text-3xl: 1.25rem;
+  --text-4xl: 1.5rem;
+  --text-5xl: 1.8rem;
+  --text-6xl: 2.2rem;
+  --text-7xl: 2.8rem;
 }
 
 [data-theme="dark"] {
@@ -133,6 +165,27 @@ body {
   color: var(--ink);
 }
 
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 16px;
+  z-index: 9999;
+  padding: 10px 20px;
+  background: var(--green);
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: top 120ms ease;
+}
+
+.skip-link:focus {
+  top: 8px;
+  outline: 3px solid var(--positive-bright);
+  outline-offset: 2px;
+}
+
 button,
 input,
 select {
@@ -154,8 +207,9 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 3px solid rgba(46, 140, 108, 0.26);
+  outline: 3px solid var(--positive);
   outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .app-shell {
@@ -1569,6 +1623,12 @@ footer {
   gap: 22px;
   min-height: 700px;
   padding-bottom: 48px;
+  animation: tabFadeIn 250ms ease both;
+}
+
+@keyframes tabFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Compact tab stacks that fit in viewport (journey, archetypes) */
@@ -4484,6 +4544,155 @@ footer {
   .gate-cards { grid-template-columns: 1fr; }
 }
 
+.gate-cards--three {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 768px) {
+  .gate-cards--three { grid-template-columns: 1fr; }
+}
+
+.onboarding-gate__subtitle {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+.onboarding-gate__wordmark-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.onboarding-gate__tagline {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  line-height: 1.55;
+  max-width: 520px;
+}
+
+.gate-card--explore {
+  border-style: dashed;
+  border-color: var(--line-strong);
+}
+
+.gate-card--explore:hover {
+  border-color: var(--accent);
+}
+
+/* ── Wizard Results ───────────────────────────────────────────────────────── */
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeInUp 450ms ease both;
+}
+
+.wizard-results {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  overflow-y: auto;
+}
+
+.wizard-results__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  max-width: 720px;
+  width: 100%;
+  text-align: center;
+}
+
+.wizard-results__title {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.5rem, 3.5vw, 2.2rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.wizard-results__subtitle {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  line-height: 1.55;
+  max-width: 500px;
+}
+
+.wizard-results__cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .wizard-results__cards { grid-template-columns: 1fr; }
+}
+
+.wizard-result-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: center;
+}
+
+.wizard-result-card--natural { border-top: 3px solid var(--positive); }
+.wizard-result-card--working { border-top: 3px solid var(--accent); }
+.wizard-result-card--recommended { border-top: 3px solid var(--blue); }
+
+.wizard-result-card__label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.wizard-result-card__code {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+}
+
+.wizard-result-card__name {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.wizard-result-card__desc {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.wizard-results__enter {
+  margin-top: 8px;
+}
+
 /* ── Tutorial Shell ───────────────────────────────────────────────────────── */
 
 .tutorial-shell {
@@ -5450,19 +5659,6 @@ main {
   background: rgba(255,255,255,0.10);
 }
 
-.text-button {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--green);
-  opacity: 0.85;
-  transition: opacity var(--transition);
-}
-
-.text-button:hover {
-  opacity: 1;
-  text-decoration: none;
-}
-
 /* ── Slider cards ─────────────────────────────────────────────────────────── */
 
 .slider-card {
@@ -6161,12 +6357,6 @@ select:focus-visible {
 
 .section-kicker, .eyebrow {
   color: var(--ink-faint);
-}
-
-/* ── Text button ──────────────────────────────────────────────────────────── */
-
-.text-button {
-  color: var(--accent);
 }
 
 /* ── Situation intro accent ───────────────────────────────────────────────── */
@@ -7095,6 +7285,77 @@ select:focus-visible {
   flex-shrink: 0;
 }
 
+.wizard-working__controls-sub {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.wizard-working__anchor-code {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--positive);
+}
+
+.wizard-working__live-badge {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.wizard-working__code-badge {
+  font-family: var(--font-mono);
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.wizard-working__code-name {
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.wizard-working__deltas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.wizard-delta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.wizard-delta--up .wizard-delta__value {
+  color: var(--positive);
+}
+
+.wizard-delta--down .wizard-delta__value {
+  color: var(--red);
+}
+
+.wizard-delta__dim {
+  color: var(--ink-faint);
+}
+
 /* ── Wizard Context Phase ─────────────────────────────────────────────────── */
 
 .wizard-context-phase {
@@ -7133,6 +7394,36 @@ select:focus-visible {
 
 .wizard-context__controls-title {
   margin-bottom: 0.5rem;
+}
+
+.wizard-context__controls-sub,
+.wizard-working__controls-sub {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.wizard-context__live-badge {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.wizard-context__code-badge {
+  font-family: var(--font-mono);
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--blue);
+}
+
+.wizard-context__code-name {
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+  font-weight: 600;
 }
 
 .wizard-context__recommended {
@@ -7233,5 +7524,131 @@ select:focus-visible {
 .wizard-overlay__body {
   flex: 1;
   min-height: 0;
+}
+
+/* ── Mobile responsiveness ─────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  /* Reduce archetype grid columns */
+  .archetypes-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+  }
+
+  /* Stack archetypes detail on mobile */
+  .archetypes-detail {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Wizard phases stack on mobile */
+  .wizard-working__row,
+  .wizard-context__row {
+    flex-direction: column;
+  }
+
+  .wizard-working__anchor,
+  .wizard-working__working,
+  .wizard-context__anchor,
+  .wizard-context__recommended {
+    width: 100%;
+    min-width: 0;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    padding: 1rem;
+  }
+
+  /* Tighter tabs on mobile */
+  .product-tabs {
+    gap: 4px;
+    padding: 6px;
+    margin: 0 0 12px;
+    border-radius: 10px;
+  }
+
+  .product-tab {
+    padding: 6px 10px;
+    font-size: 0.74rem;
+    min-height: 32px;
+  }
+
+  /* Tighter main content spacing */
+  main {
+    width: calc(100% - 20px);
+    padding: 0 4px;
+  }
+
+  /* Compact journey bar */
+  .journey-bar {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .journey-step {
+    font-size: 0.72rem;
+    gap: 4px;
+  }
+
+  /* Compact track grid */
+  .track-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Compact milestone grid */
+  .milestone-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Compact successor grid */
+  .successor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Wizard results stack */
+  .wizard-results__cards {
+    grid-template-columns: 1fr;
+  }
+
+  /* Gate cards */
+  .gate-cards--three {
+    grid-template-columns: 1fr;
+  }
+
+  /* Two column layouts stack */
+  .two-column-layout {
+    grid-template-columns: 1fr;
+  }
+
+  /* Profile comparison grids stack */
+  .profile-comparison-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Single column archetype grid on very small screens */
+  .archetypes-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Narrower product tabs */
+  .product-tab {
+    padding: 5px 8px;
+    font-size: 0.7rem;
+  }
+
+  /* Compact onboarding */
+  .onboarding-gate {
+    padding: 24px 16px;
+  }
+
+  .gate-card {
+    padding: 20px 16px;
+  }
+
+  /* Reduce wizard inner padding */
+  .wizard-working__controls,
+  .wizard-context__controls {
+    padding: 1rem 0.75rem;
+  }
 }
 

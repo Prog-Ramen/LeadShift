@@ -13,6 +13,7 @@ interface OnboardingGateProps {
   onNew: () => void;
   onExperienced: (code: string) => void;
   onWizard: () => void;
+  onExplore?: () => void;
   showCodeInput?: boolean;
   codeValue?: string;
   onCodeChange?: (code: string) => void;
@@ -27,6 +28,7 @@ export function OnboardingGate({
   onNew,
   onExperienced,
   onWizard,
+  onExplore,
   showCodeInput,
   codeValue,
   onCodeChange,
@@ -103,19 +105,28 @@ export function OnboardingGate({
       <div className="onboarding-gate__inner">
         <div className="onboarding-gate__brand">
           <div className="brand__mark" style={{ width: 52, height: 52, borderRadius: 15, fontSize: "0.9rem" }}>LS</div>
-          <span className="onboarding-gate__wordmark">LeadShift</span>
+          <div className="onboarding-gate__wordmark-col">
+            <span className="onboarding-gate__wordmark">LeadShift</span>
+            <span className="onboarding-gate__subtitle">Find your leadership style. Practice adapting it. See what changes.</span>
+          </div>
         </div>
-        <h1 className="onboarding-gate__headline">How do you want to start?</h1>
-        <div className="gate-cards">
+        <h1 className="onboarding-gate__headline">What brings you to LeadShift?</h1>
+        <p className="onboarding-gate__tagline">Discover your natural style, practice adapting, or load profiles you already have.</p>
+        <div className="gate-cards gate-cards--three">
           <button className="gate-card" onClick={onNew}>
             <span className="gate-card__icon">✦</span>
-            <strong className="gate-card__title">New to LeadShift</strong>
-            <p className="gate-card__sub">Take a guided wizard — build all three profiles step by step</p>
+            <strong className="gate-card__title">Guided wizard</strong>
+            <p className="gate-card__sub">Build all three profiles step by step with a short assessment</p>
           </button>
           <button className="gate-card" onClick={() => onExperienced("")}>
-            <span className="gate-card__icon">→</span>
-            <strong className="gate-card__title">I know my way around</strong>
+            <span className="gate-card__icon">{">"}</span>
+            <strong className="gate-card__title">Load profiles</strong>
             <p className="gate-card__sub">Paste a share code, pick a template, or jump in</p>
+          </button>
+          <button className="gate-card gate-card--explore" onClick={onWizard}>
+            <span className="gate-card__icon">◉</span>
+            <strong className="gate-card__title">Just explore</strong>
+            <p className="gate-card__sub">Dive into the simulator and archetype explorer — no assessment needed</p>
           </button>
         </div>
       </div>

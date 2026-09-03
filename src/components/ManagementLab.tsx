@@ -68,11 +68,11 @@ import type {
 } from "@/lib/types";
 
 const TABS = [
-  ["practice", "Practice"],
-  ["style", "My Style"],
-  ["journey", "Journey"],
-  ["archetypes", "Archetypes"],
-  ["reflect", "Reflect"],
+  ["practice", "Simulator"],
+  ["style", "Profiles"],
+  ["journey", "Growth"],
+  ["archetypes", "Explore"],
+  ["reflect", "Journal"],
 ] as const;
 
 type TabId = (typeof TABS)[number][0];
@@ -153,11 +153,9 @@ export default function ManagementLab() {
   const [context, setContext] = useState<SituationContext>(DEFAULT_CONTEXT);
   const [assessmentAnswers, setAssessmentAnswers] = useState<Record<string, string>>({});
   const [assessmentStep, setAssessmentStep] = useState(0);
-  const [showAssessmentInPractice, setShowAssessmentInPractice] = useState(false);
   const [conversationTone, setConversationTone] = useState<ConversationTone>("collaborative");
   const [snapshots, setSnapshots] = useState<StyleSnapshot[]>([]);
   const [snapshotLabel, setSnapshotLabel] = useState("After 30 days");
-  const [snapshotNote] = useState("");
   const [perceptions, setPerceptions] = useState<TeamPerceptionResponse[]>([]);
   const [perceptionDraft, setPerceptionDraft] = useState<ManagementProfile>(DEFAULT_PROFILE);
   const [relationship, setRelationship] = useState("Team member");
@@ -514,7 +512,6 @@ export default function ManagementLab() {
       {
         id: uid(),
         label,
-        note: snapshotNote.trim() || undefined,
         profile: { ...workingProfile },
         createdAt: new Date().toISOString(),
       },
@@ -667,6 +664,7 @@ export default function ManagementLab() {
           onNew={() => setVisitState("wizard")}
           onExperienced={handleExperienced}
           onWizard={() => { setShowTemplateSelection(false); setExperiencedCode(""); setCodeError(""); }}
+          onExplore={() => { window.localStorage.setItem("leadshift:visited", "1"); setVisitState("app"); }}
           showTemplateSelection
           templates={TEMPLATES.map((t) => ({ id: t.id, name: t.name, description: t.description }))}
           onTemplateSelect={handleTemplateSelect}
@@ -679,6 +677,7 @@ export default function ManagementLab() {
         onNew={() => setVisitState("wizard")}
         onExperienced={handleExperienced}
         onWizard={() => { setShowTemplateSelection(false); setExperiencedCode(""); setCodeError(""); }}
+        onExplore={() => { window.localStorage.setItem("leadshift:visited", "1"); setVisitState("app"); }}
         showCodeInput
         codeValue={experiencedCode}
         onCodeChange={setExperiencedCode}
@@ -707,10 +706,22 @@ export default function ManagementLab() {
         </div>
       </header>
 
-      <main id="top" className="product-main">
-        <nav className="product-tabs" aria-label="LeadShift sections">
-          {TABS.map(([id, label]) => (
-            <button key={id} className={activeTab === id ? "product-tab product-tab--active" : "product-tab"} onClick={() => changeTab(id)}>
+      <a href="#main-content" className="skip-link" onClick={(e) => { e.preventDefault(); document.getElementById("main-content")?.focus(); }}>Skip to main content</a>
+
+      <main id="main-content" tabIndex={-1} className="product-main">
+        <nav className="product-tabs" role="tablist" aria-label="LeadShift sections">
+          {TABS.map(([id, label], index) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={activeTab === id}
+              aria-controls={`panel-${id}`}
+              aria-current={activeTab === id ? "page" : undefined}
+              id={`tab-${id}`}
+              className={activeTab === id ? "product-tab product-tab--active" : "product-tab"}
+              onClick={() => changeTab(id)}
+              tabIndex={activeTab === id ? 0 : -1}
+            >
               {label}
             </button>
           ))}
@@ -731,7 +742,7 @@ export default function ManagementLab() {
 
         {/* ── PRACTICE TAB ── */}
         {activeTab === "practice" && (
-          <section className="tab-stack">
+          <section id="panel-practice" role="tabpanel" aria-labelledby="tab-practice" className="tab-stack">
             <div className="simulator-layout">
               <article className="panel">
                 <label className="full-field"><span>Scenario</span>
@@ -826,117 +837,23 @@ export default function ManagementLab() {
             </div>
 
             {/* Assessment-first gateway: show wizard hero if baseline not done */}
-            {!baselineDone && !showAssessmentInPractice && (
+            {!baselineDone && (
               <div className="journey-gateway">
                 <div className="journey-gateway__text">
                   <span className="section-kicker">Step 1 of 3</span>
                   <h2>Discover your baseline style</h2>
                   <p>Six scenarios. Choose what you'd genuinely do first — not the theoretically correct answer. Takes about 2 minutes.</p>
                 </div>
-                <button className="button button--primary button--wide" onClick={() => { setShowAssessmentInPractice(true); setAssessmentStep(1); }}>
+                <button className="button button--primary button--wide" onClick={() => setVisitState("wizard")}>
                   Start baseline assessment
                 </button>
               </div>
             )}
 
-            {baselineDone && !showAssessmentInPractice && (
+            {baselineDone && (
               <div className="baseline-set-banner">
                 <span>✓ Baseline set</span>
-                <button className="text-button" onClick={() => { setShowAssessmentInPractice(true); setAssessmentStep(1); }}>Redo assessment</button>
-              </div>
-            )}
-
-            {showAssessmentInPractice && (
-              <div className="assessment-wizard">
-                {assessmentStep === 0 && (
-                  <div className="practice-entry">
-                    <div>
-                      <strong>Baseline style assessment</strong>
-                      <p>Choose what you would genuinely do first, not what sounds theoretically ideal.</p>
-                    </div>
-                    <button className="button button--primary" onClick={() => setAssessmentStep(1)}>Start</button>
-                  </div>
-                )}
-
-                {assessmentStep >= 1 && assessmentStep <= ASSESSMENT_SCENARIOS.length && (() => {
-                  const scenario = ASSESSMENT_SCENARIOS[assessmentStep - 1];
-                  const progressPct = Math.round(((assessmentStep - 1) / ASSESSMENT_SCENARIOS.length) * 100);
-                  return (
-                    <article className="panel assessment-card">
-                      <div className="assessment-progress">
-                        <div className="assessment-progress-bar">
-                          <div className="assessment-progress-bar-fill" style={{ width: `${progressPct}%` }} />
-                        </div>
-                        <span>{assessmentStep} of {ASSESSMENT_SCENARIOS.length}</span>
-                      </div>
-                      <span className="section-kicker">{scenario.title}</span>
-                      <h3>{scenario.prompt}</h3>
-                      <div className="option-list">
-                        {scenario.options.map((option) => (
-                          <label
-                            className={assessmentAnswers[scenario.id] === option.id ? "choice-card choice-card--selected" : "choice-card"}
-                            key={option.id}
-                          >
-                            <input
-                              type="radio"
-                              name={scenario.id}
-                              checked={assessmentAnswers[scenario.id] === option.id}
-                              onChange={() => setAssessmentAnswers((current) => ({ ...current, [scenario.id]: option.id }))}
-                            />
-                            <span><strong>{option.label}</strong><small>{option.rationale}</small></span>
-                          </label>
-                        ))}
-                      </div>
-                      <div className="assessment-nav">
-                        <button
-                          className="button button--ghost"
-                          onClick={() => setAssessmentStep((s) => Math.max(0, s - 1))}
-                        >
-                          {assessmentStep === 1 ? "Cancel" : "Previous"}
-                        </button>
-                        <button
-                          className="button button--primary"
-                          disabled={!assessmentAnswers[scenario.id]}
-                          onClick={() => setAssessmentStep((s) => s + 1)}
-                        >
-                          {assessmentStep < ASSESSMENT_SCENARIOS.length ? "Next" : "See results"}
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })()}
-
-                {assessmentStep > ASSESSMENT_SCENARIOS.length && (
-                  <article className="panel assessment-card">
-                    <div className="assessment-progress">
-                      <div className="assessment-progress-bar">
-                        <div className="assessment-progress-bar-fill" style={{ width: "100%" }} />
-                      </div>
-                      <span>Complete</span>
-                    </div>
-                    <ProfileSummary label="Assessment estimate" title="Emerging natural style" profile={assessmentProfile} />
-                    <div className="assessment-nav">
-                      <button className="button button--ghost" onClick={() => setAssessmentStep(ASSESSMENT_SCENARIOS.length)}>Back</button>
-                      <button
-                        className="button button--primary"
-                        disabled={answeredAssessmentCount < 3}
-                        onClick={() => {
-                          setNaturalProfile({ ...assessmentProfile });
-                          applyWorkingProfile(assessmentProfile, "assessment_result");
-                          void trackEvent("assessment_completed", { answeredCount: answeredAssessmentCount, archetype: getArchetypeCode(assessmentProfile) });
-                          setAssessmentStep(0);
-                          setShowAssessmentInPractice(false);
-                          // No changeTab — stay in Practice, the baseline-set-banner will appear
-                        }}
-                      >
-                        Apply as my natural style
-                      </button>
-                    </div>
-                    {answeredAssessmentCount < 3 && (
-                      <p className="helper-text">Answer at least three scenarios to apply.</p>
-                    )}
-                  </article>
-                )}
+                <button className="text-button" onClick={() => setVisitState("wizard")}>Redo assessment</button>
               </div>
             )}
 
@@ -956,7 +873,7 @@ export default function ManagementLab() {
 
         {/* ── MY STYLE TAB ── */}
         {activeTab === "style" && (
-          <section className="tab-stack">
+          <section id="panel-style" role="tabpanel" aria-labelledby="tab-style" className="tab-stack">
             <StylesPage
               natural={naturalProfile}
               working={workingProfile}
@@ -975,7 +892,7 @@ export default function ManagementLab() {
 
         {/* ── JOURNEY TAB ── */}
         {activeTab === "journey" && (
-          <section className="tab-stack tab-stack--compact journey-tab">
+          <section id="panel-journey" role="tabpanel" aria-labelledby="tab-journey" className="tab-stack tab-stack--compact journey-tab">
 
             {/* Track picker */}
             {!trackProgress && (
@@ -1235,14 +1152,14 @@ export default function ManagementLab() {
 
         {/* ── ARCHETYPES TAB ── */}
         {activeTab === "archetypes" && (
-          <section className="tab-stack tab-stack--compact">
+          <section id="panel-archetypes" role="tabpanel" aria-labelledby="tab-archetypes" className="tab-stack tab-stack--compact">
             <ArchetypesPage darkMode={darkMode} />
           </section>
         )}
 
         {/* ── REFLECT TAB ── */}
         {activeTab === "reflect" && (
-          <section className="tab-stack">
+          <section id="panel-reflect" role="tabpanel" aria-labelledby="tab-reflect" className="tab-stack">
 
             {/* Decision Journal — primary action */}
             <div className="reflect-section">
