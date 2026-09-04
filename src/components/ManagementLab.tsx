@@ -653,66 +653,63 @@ export default function ManagementLab() {
         {/* ── PRACTICE TAB ── */}
         {activeTab === "practice" && (
           <section id="panel-practice" role="tabpanel" aria-labelledby="tab-practice" className="tab-stack">
-            <div className="simulator-layout">
-              <div className="simulator-topbar">
+            <div className="sim-container">
+              {/* Top bar: scenario selector + compact radar */}
+              <div className="sim-topbar">
                 <select value={simulatorId} onChange={(event) => resetSimulator(event.target.value)}>
                   {SIMULATOR_SCENARIOS.map((s) => (
                     <option key={s.id} value={s.id}>{s.title}</option>
                   ))}
                 </select>
-                <div className="simulator-scores-row">
-                  {Object.entries(simulatorScores).map(([key, value]) => (
-                    <span key={key} className="simulator-score-chip">{key}: {value}</span>
-                  ))}
-                </div>
+                <div className="sim-radar-mini"><RadarChart profile={workingProfile} compact /></div>
               </div>
 
               {simulatorComplete ? (
-                <div className="simulator-debrief">
+                <div className="sim-debrief">
                   <h3>Simulation complete</h3>
                   <div className="debrief-insight">{getSimDebriefInsight(simulatorScores)}</div>
                   {simulatorResponse && (
-                    <div className="simulator-response"><span>What happened</span><p>{simulatorResponse}</p></div>
+                    <div className="sim-response"><span>What happened</span><p>{simulatorResponse}</p></div>
                   )}
-                  <div className="simulator-actions">
+                  <div className="sim-scores-inline">
+                    {Object.entries(simulatorScores).map(([key, value]) => (
+                      <div key={key} className="sim-score-row">
+                        <span className="sim-score-label">{key}</span>
+                        <div className="sim-score-track"><div className="sim-score-fill" style={{ width: `${value}%` }} /></div>
+                        <span className="sim-score-val">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="sim-actions">
                     <button className="button button--primary" onClick={() => resetSimulator()}>Run again</button>
                     <button className="button button--ghost" onClick={() => resetSimulator(nextScenarioId)}>Next scenario</button>
                     <button className="button button--ghost" onClick={() => changeTab("style")}>Go to Profiles →</button>
                   </div>
                 </div>
               ) : (
-                <div className="simulator-body">
-                  <div className="simulator-prompt-area">
-                    <div className="situation-intro"><strong>{simulator.title}</strong><p>{simulator.description}</p></div>
-                    {simulatorResponse && (
-                      <div className="simulator-response"><span>What happened</span><p>{simulatorResponse}</p></div>
-                    )}
-                    {simulatorNode && (
-                      <div className="simulator-prompt-card">
-                        <h3>{simulatorNode.prompt}</h3>
-                        <div className="simulator-choices">
-                          {simulatorNode.choices.map((choice) => (
-                            <button key={choice.id} onClick={() => chooseSimulatorOption(choice)}>{choice.label}</button>
-                          ))}
-                        </div>
+                <div className="sim-main">
+                  <div className="sim-intro"><strong>{simulator.title}</strong><p>{simulator.description}</p></div>
+                  {simulatorResponse && (
+                    <div className="sim-response"><span>What happened</span><p>{simulatorResponse}</p></div>
+                  )}
+                  {simulatorNode && (
+                    <div className="sim-card">
+                      <h3>{simulatorNode.prompt}</h3>
+                      <div className="sim-choices">
+                        {simulatorNode.choices.map((choice) => (
+                          <button key={choice.id} onClick={() => chooseSimulatorOption(choice)}>{choice.label}</button>
+                        ))}
                       </div>
-                    )}
-                  </div>
-                  <div className="simulator-sidebar">
-                    <div className="simulator-radar-panel">
-                      <RadarChart profile={workingProfile} compact />
                     </div>
-                    <div className="simulator-bars">
-                      {Object.entries(simulatorScores).map(([key, value]) => (
-                        <div key={key} className="simulator-bar-row">
-                          <span className="simulator-bar-label">{key}</span>
-                          <div className="simulator-bar-track">
-                            <div className="simulator-bar-fill" style={{ width: `${value}%` }} />
-                          </div>
-                          <span className="simulator-bar-value">{value}</span>
-                        </div>
-                      ))}
-                    </div>
+                  )}
+                  <div className="sim-scores-inline">
+                    {Object.entries(simulatorScores).map(([key, value]) => (
+                      <div key={key} className="sim-score-row">
+                        <span className="sim-score-label">{key}</span>
+                        <div className="sim-score-track"><div className="sim-score-fill" style={{ width: `${value}%` }} /></div>
+                        <span className="sim-score-val">{value}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

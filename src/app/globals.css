@@ -7885,3 +7885,228 @@ select:focus-visible {
   }
 }
 
+/* ── Compact Simulator (sim-profile-fix) ──────────────────────────────────── */
+
+.sim-container {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.sim-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sim-topbar select {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.sim-radar-mini {
+  flex-shrink: 0;
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sim-radar-mini .radar {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.sim-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.sim-intro {
+  padding: var(--space-2) 0;
+}
+
+.sim-intro strong {
+  display: block;
+  font-size: var(--text-base);
+  margin-bottom: var(--space-1);
+}
+
+.sim-intro p {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.sim-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: var(--space-5);
+}
+
+.sim-card h3 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-lg);
+  line-height: 1.4;
+}
+
+.sim-choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sim-choices button {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.sim-choices button:hover {
+  background: var(--hover);
+  border-color: var(--accent);
+}
+
+.sim-response {
+  background: var(--hover);
+  border-radius: 8px;
+  padding: var(--space-3) var(--space-4);
+}
+
+.sim-response span {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-1);
+}
+
+.sim-response p {
+  margin: var(--space-1) 0 0;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.sim-scores-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.sim-score-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  flex: 1 1 140px;
+}
+
+.sim-score-label {
+  width: 64px;
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--ink-muted);
+  text-transform: lowercase;
+}
+
+.sim-score-track {
+  flex: 1;
+  height: 6px;
+  background: var(--hover);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.sim-score-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 300ms ease;
+}
+
+.sim-score-val {
+  width: 28px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.sim-debrief {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.sim-debrief h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.sim-actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* ── Wizard overflow fix ──────────────────────────────────────────────────── */
+
+.wizard-working-phase,
+.wizard-context-phase {
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.wizard-working__row,
+.wizard-context__row {
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+  overflow-x: auto;
+}
+
+.wizard-working__controls,
+.wizard-context__controls {
+  min-width: 0;
+}
+
+.wizard-working__anchor,
+.wizard-working__working,
+.wizard-context__anchor,
+.wizard-context__recommended {
+  flex-shrink: 0;
+  flex-basis: 240px;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .sim-radar-mini {
+    display: none;
+  }
+}
+
