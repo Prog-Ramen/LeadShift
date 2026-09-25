@@ -14,7 +14,6 @@ interface StylesPageProps {
   onEditRecommended: () => void;
   onGoToPractice: () => void;
   onGoToJourney: () => void;
-  onGoToReflect: () => void;
   onShare: () => void;
   darkMode: boolean;
 }
@@ -22,7 +21,7 @@ interface StylesPageProps {
 export function StylesPage({
   natural, working, recommended,
   onEditNatural, onEditWorking, onEditRecommended,
-  onGoToPractice, onGoToJourney, onGoToReflect, onShare,
+  onGoToPractice, onGoToJourney, onShare,
   darkMode,
 }: StylesPageProps) {
   const naturalCode = getArchetypeCode(natural);
@@ -89,7 +88,6 @@ export function StylesPage({
       <div className="styles-page-actions">
         <button className="button button--primary" onClick={onGoToPractice}>Go to Practice</button>
         <button className="button button--ghost" onClick={onGoToJourney}>Go to Journey</button>
-        <button className="button button--ghost" onClick={onGoToReflect}>Go to Reflect</button>
         <button className="button button--ghost" onClick={onShare}>Share</button>
       </div>
     </div>

@@ -21,7 +21,6 @@ import {
   getContextRecommendedProfile,
   getConversationExample,
   getHistoryInsight,
-  getJournalInsight,
   getMarginalImpacts,
   getOvercorrectionWarnings,
   getPerceptionGaps,
@@ -59,7 +58,6 @@ import {
 import type {
   ContextProfile,
   DimensionKey,
-  JournalEntry,
   ManagementProfile,
   SimulatorChoice,
   StyleSnapshot,
@@ -68,11 +66,10 @@ import type {
 } from "@/lib/types";
 
 const TABS = [
-  ["practice", "Practice"],
-  ["style", "My Style"],
-  ["journey", "Journey"],
-  ["archetypes", "Archetypes"],
-  ["reflect", "Reflect"],
+  ["practice", "Simulator"],
+  ["style", "Profiles"],
+  ["journey", "Growth"],
+  ["archetypes", "Explore"],
 ] as const;
 
 type TabId = (typeof TABS)[number][0];
@@ -90,31 +87,13 @@ type StoredWorkspace = {
   snapshots: StyleSnapshot[];
   perceptions: TeamPerceptionResponse[];
   contextProfiles: ContextProfile[];
-  journal: JournalEntry[];
   simulatorId: string;
   simulatorNodeId: string;
   simulatorScores: { trust: number; clarity: number; accountability: number; delivery: number };
   simulatorResponse: string;
   simulatorComplete: boolean;
-  simReflection: string;
-  simCommitment: string;
   trackProgress: TrackProgress | null;
 };
-
-const JOURNAL_SITUATIONS = [
-  "Deadline missed", "Performance issue", "Team conflict",
-  "Prioritization call", "Promotion decision", "1:1 conversation",
-  "Team change", "Cross-team friction",
-];
-
-const COMMITMENT_CHIPS = [
-  "Delegate more decisions",
-  "Set clearer checkpoints",
-  "Name the pattern earlier",
-  "Ask before acting",
-  "Hold the performance bar",
-  "Schedule a direct 1:1",
-];
 
 const uid = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -153,29 +132,19 @@ export default function ManagementLab() {
   const [context, setContext] = useState<SituationContext>(DEFAULT_CONTEXT);
   const [assessmentAnswers, setAssessmentAnswers] = useState<Record<string, string>>({});
   const [assessmentStep, setAssessmentStep] = useState(0);
-  const [showAssessmentInPractice, setShowAssessmentInPractice] = useState(false);
   const [conversationTone, setConversationTone] = useState<ConversationTone>("collaborative");
   const [snapshots, setSnapshots] = useState<StyleSnapshot[]>([]);
   const [snapshotLabel, setSnapshotLabel] = useState("After 30 days");
-  const [snapshotNote] = useState("");
   const [perceptions, setPerceptions] = useState<TeamPerceptionResponse[]>([]);
   const [perceptionDraft, setPerceptionDraft] = useState<ManagementProfile>(DEFAULT_PROFILE);
   const [relationship, setRelationship] = useState("Team member");
   const [contextProfiles, setContextProfiles] = useState<ContextProfile[]>([]);
   const [contextProfileName, setContextProfileName] = useState("");
-  const [journal, setJournal] = useState<JournalEntry[]>([]);
-  const [journalForm, setJournalForm] = useState({
-    situation: "",
-    outcome: "",
-    reflection: "",
-  });
   const [simulatorId, setSimulatorId] = useState(SIMULATOR_SCENARIOS[0].id);
   const [simulatorNodeId, setSimulatorNodeId] = useState(SIMULATOR_SCENARIOS[0].startNodeId);
   const [simulatorScores, setSimulatorScores] = useState({ trust: 50, clarity: 50, accountability: 50, delivery: 50 });
   const [simulatorResponse, setSimulatorResponse] = useState("");
   const [simulatorComplete, setSimulatorComplete] = useState(false);
-  const [simReflection, setSimReflection] = useState("");
-  const [simCommitment, setSimCommitment] = useState("");
   const [trackProgress, setTrackProgress] = useState<TrackProgress | null>(null);
   const [selectedMilestoneIndex, setSelectedMilestoneIndex] = useState<number | null>(null);
   const [shareStatus, setShareStatus] = useState("Share");
@@ -232,14 +201,11 @@ export default function ManagementLab() {
       if (stored.snapshots) setSnapshots(stored.snapshots);
       if (stored.perceptions) setPerceptions(stored.perceptions);
       if (stored.contextProfiles) setContextProfiles(stored.contextProfiles);
-      if (stored.journal) setJournal(stored.journal);
       if (stored.simulatorId) setSimulatorId(stored.simulatorId);
       if (stored.simulatorNodeId) setSimulatorNodeId(stored.simulatorNodeId);
       if (stored.simulatorScores) setSimulatorScores(stored.simulatorScores);
       if (stored.simulatorResponse !== undefined) setSimulatorResponse(stored.simulatorResponse);
       if (stored.simulatorComplete !== undefined) setSimulatorComplete(stored.simulatorComplete);
-      if (stored.simReflection !== undefined) setSimReflection(stored.simReflection);
-      if (stored.simCommitment !== undefined) setSimCommitment(stored.simCommitment);
       if (stored.trackProgress !== undefined) setTrackProgress(stored.trackProgress);
       if (stored.recommendedProfile) setWizardRecommended(stored.recommendedProfile);
       setAnalyticsPreferenceState(preference);
@@ -283,14 +249,11 @@ export default function ManagementLab() {
       snapshots,
       perceptions,
       contextProfiles,
-      journal,
       simulatorId,
       simulatorNodeId,
       simulatorScores,
       simulatorResponse,
       simulatorComplete,
-      simReflection,
-      simCommitment,
       trackProgress,
     };
     saveSessionWorkspace(workspace);
@@ -308,14 +271,11 @@ export default function ManagementLab() {
     snapshots,
     perceptions,
     contextProfiles,
-    journal,
     simulatorId,
     simulatorNodeId,
     simulatorScores,
     simulatorResponse,
     simulatorComplete,
-    simReflection,
-    simCommitment,
     trackProgress,
   ]);
 
@@ -514,7 +474,6 @@ export default function ManagementLab() {
       {
         id: uid(),
         label,
-        note: snapshotNote.trim() || undefined,
         profile: { ...workingProfile },
         createdAt: new Date().toISOString(),
       },
@@ -553,35 +512,6 @@ export default function ManagementLab() {
     void trackEvent("context_profile_saved", { situationId: selectedSituationId, profileNumber: contextProfiles.length + 1 });
   };
 
-  const addJournalEntry = () => {
-    if (!journalForm.situation.trim()) return;
-    const outcomeLabel =
-      journalForm.outcome === "worked" ? "Worked well"
-      : journalForm.outcome === "mixed" ? "Mixed result"
-      : journalForm.outcome === "didnt-work" ? "Didn't work"
-      : "";
-    setJournal((current) => [
-      {
-        id: uid(),
-        createdAt: new Date().toISOString(),
-        situation: journalForm.situation.trim(),
-        chosenStyle: outcomeLabel,
-        intendedOutcome: "",
-        actualOutcome: "",
-        reflection: journalForm.reflection.trim(),
-        profile: { ...workingProfile },
-      },
-      ...current,
-    ]);
-    setJournalForm({ situation: "", outcome: "", reflection: "" });
-    void trackEvent("journal_entry_saved", {
-      hasChosenStyle: Boolean(outcomeLabel),
-      hasActualOutcome: false,
-      hasReflection: Boolean(journalForm.reflection.trim()),
-      entryNumber: journal.length + 1,
-    });
-  };
-
   const resetSimulator = (nextId = simulatorId) => {
     const next = SIMULATOR_SCENARIOS.find((scenario) => scenario.id === nextId) ?? SIMULATOR_SCENARIOS[0];
     setSimulatorId(next.id);
@@ -589,8 +519,6 @@ export default function ManagementLab() {
     setSimulatorScores({ trust: 50, clarity: 50, accountability: 50, delivery: 50 });
     setSimulatorResponse("");
     setSimulatorComplete(false);
-    setSimReflection("");
-    setSimCommitment("");
     void trackEvent("simulation_started", { scenarioId: next.id });
   };
 
@@ -629,25 +557,6 @@ export default function ManagementLab() {
     return "Your choices show a mixed pattern — the trade-offs above reveal where you prioritized.";
   };
 
-  const saveSimToJournal = () => {
-    if (!simCommitment.trim() && !simReflection.trim()) return;
-    setJournal((current) => [
-      {
-        id: uid(),
-        createdAt: new Date().toISOString(),
-        situation: `Simulation: ${simulator.title}`,
-        chosenStyle: getSimDebriefInsight(simulatorScores),
-        intendedOutcome: simCommitment.trim() || "—",
-        actualOutcome: "",
-        reflection: simReflection.trim(),
-        profile: { ...workingProfile },
-      },
-      ...current,
-    ]);
-    void trackEvent("sim_debrief_saved", { scenarioId: simulator.id });
-    changeTab("reflect");
-  };
-
   // Find next scenario id for "Try another" button
   const nextScenarioId = (() => {
     const idx = SIMULATOR_SCENARIOS.findIndex((s) => s.id === simulatorId);
@@ -656,7 +565,6 @@ export default function ManagementLab() {
 
   const baselineDone = answeredAssessmentCount >= 3;
   const practiceDone = simulatorComplete;
-  const reflectDone = journal.length > 0;
 
   if (!hydrated) return null;
   if (visitState === "gate") {
@@ -666,7 +574,8 @@ export default function ManagementLab() {
         <OnboardingGate
           onNew={() => setVisitState("wizard")}
           onExperienced={handleExperienced}
-          onWizard={() => { setShowTemplateSelection(false); setExperiencedCode(""); setCodeError(""); }}
+          onWizard={() => setVisitState("wizard")}
+          onExplore={() => { window.localStorage.setItem("leadshift:visited", "1"); setVisitState("app"); }}
           showTemplateSelection
           templates={TEMPLATES.map((t) => ({ id: t.id, name: t.name, description: t.description }))}
           onTemplateSelect={handleTemplateSelect}
@@ -678,7 +587,8 @@ export default function ManagementLab() {
       <OnboardingGate
         onNew={() => setVisitState("wizard")}
         onExperienced={handleExperienced}
-        onWizard={() => { setShowTemplateSelection(false); setExperiencedCode(""); setCodeError(""); }}
+        onWizard={() => setVisitState("wizard")}
+        onExplore={() => { window.localStorage.setItem("leadshift:visited", "1"); setVisitState("app"); }}
         showCodeInput
         codeValue={experiencedCode}
         onCodeChange={setExperiencedCode}
@@ -707,10 +617,22 @@ export default function ManagementLab() {
         </div>
       </header>
 
-      <main id="top" className="product-main">
-        <nav className="product-tabs" aria-label="LeadShift sections">
-          {TABS.map(([id, label]) => (
-            <button key={id} className={activeTab === id ? "product-tab product-tab--active" : "product-tab"} onClick={() => changeTab(id)}>
+      <a href="#main-content" className="skip-link" onClick={(e) => { e.preventDefault(); document.getElementById("main-content")?.focus(); }}>Skip to main content</a>
+
+      <main id="main-content" tabIndex={-1} className="product-main">
+        <nav className="product-tabs" role="tablist" aria-label="LeadShift sections">
+          {TABS.map(([id, label], index) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={activeTab === id}
+              aria-controls={`panel-${id}`}
+              aria-current={activeTab === id ? "page" : undefined}
+              id={`tab-${id}`}
+              className={activeTab === id ? "product-tab product-tab--active" : "product-tab"}
+              onClick={() => changeTab(id)}
+              tabIndex={activeTab === id ? 0 : -1}
+            >
               {label}
             </button>
           ))}
@@ -720,7 +642,6 @@ export default function ManagementLab() {
           {[
             { label: "Baseline", done: baselineDone, tab: "practice" as TabId },
             { label: "Practice", done: practiceDone, tab: "practice" as TabId },
-            { label: "Reflect", done: reflectDone, tab: "reflect" as TabId },
           ].map((step, i) => (
             <div key={step.label} className={`journey-step${step.done ? " journey-step--done" : ""}`}>
               <span className="journey-dot">{step.done ? "✓" : i + 1}</span>
@@ -731,224 +652,86 @@ export default function ManagementLab() {
 
         {/* ── PRACTICE TAB ── */}
         {activeTab === "practice" && (
-          <section className="tab-stack">
-            <div className="simulator-layout">
-              <article className="panel">
-                <label className="full-field"><span>Scenario</span>
-                  <select value={simulatorId} onChange={(event) => resetSimulator(event.target.value)}>
-                    {SIMULATOR_SCENARIOS.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.title}</option>)}
-                  </select>
-                </label>
-                <div className="situation-intro"><strong>{simulator.title}</strong><p>{simulator.description}</p></div>
+          <section id="panel-practice" role="tabpanel" aria-labelledby="tab-practice" className="tab-stack">
+            <div className="sim-container">
+              {/* Top bar: scenario selector + compact radar */}
+              <div className="sim-topbar">
+                <select value={simulatorId} onChange={(event) => resetSimulator(event.target.value)}>
+                  {SIMULATOR_SCENARIOS.map((s) => (
+                    <option key={s.id} value={s.id}>{s.title}</option>
+                  ))}
+                </select>
+                <div className="sim-radar-mini"><RadarChart profile={workingProfile} compact /></div>
+              </div>
 
-                {simulatorComplete ? (
-                  <div className="debrief-panel">
-                    <h2>Debrief</h2>
-
-                    <div className="debrief-scores">
-                      {Object.entries(simulatorScores).map(([key, value]) => (
-                        <div className={`debrief-score debrief-score--${value >= 65 ? "good" : value >= 45 ? "mid" : "low"}`} key={key}>
-                          <strong>{value}</strong>
-                          <span>{key}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="debrief-insight">{getSimDebriefInsight(simulatorScores)}</div>
-
-                    <div className="debrief-fields">
-                      <label className="full-field">
-                        <span>What would you do differently?</span>
-                        <textarea
-                          value={simReflection}
-                          onChange={(e) => setSimReflection(e.target.value)}
-                          placeholder="The moments where the metrics moved most..."
-                          rows={2}
-                        />
-                      </label>
-                      <div>
-                        <span className="full-field" style={{ display: "block", marginBottom: 8, color: "rgba(255,255,255,0.55)", fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.03em", textTransform: "uppercase" }}>This week I'll...</span>
-                        <div className="commitment-chips">
-                          {COMMITMENT_CHIPS.map((chip) => (
-                            <button
-                              key={chip}
-                              className={`commitment-chip${simCommitment === chip ? " commitment-chip--active" : ""}`}
-                              onClick={() => setSimCommitment((prev) => prev === chip ? "" : chip)}
-                            >
-                              {chip}
-                            </button>
-                          ))}
-                        </div>
+              {simulatorComplete ? (
+                <div className="sim-debrief">
+                  <h3>Simulation complete</h3>
+                  <div className="debrief-insight">{getSimDebriefInsight(simulatorScores)}</div>
+                  {simulatorResponse && (
+                    <div className="sim-response"><span>What happened</span><p>{simulatorResponse}</p></div>
+                  )}
+                  <div className="sim-scores-inline">
+                    {Object.entries(simulatorScores).map(([key, value]) => (
+                      <div key={key} className="sim-score-row">
+                        <span className="sim-score-label">{key}</span>
+                        <div className="sim-score-track"><div className="sim-score-fill" style={{ width: `${value}%` }} /></div>
+                        <span className="sim-score-val">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="sim-actions">
+                    <button className="button button--primary" onClick={() => resetSimulator()}>Run again</button>
+                    <button className="button button--ghost" onClick={() => resetSimulator(nextScenarioId)}>Next scenario</button>
+                    <button className="button button--ghost" onClick={() => changeTab("style")}>Go to Profiles →</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="sim-main">
+                  <div className="sim-intro"><strong>{simulator.title}</strong><p>{simulator.description}</p></div>
+                  {simulatorResponse && (
+                    <div className="sim-response"><span>What happened</span><p>{simulatorResponse}</p></div>
+                  )}
+                  {simulatorNode && (
+                    <div className="sim-card">
+                      <h3>{simulatorNode.prompt}</h3>
+                      <div className="sim-choices">
+                        {simulatorNode.choices.map((choice) => (
+                          <button key={choice.id} onClick={() => chooseSimulatorOption(choice)}>{choice.label}</button>
+                        ))}
                       </div>
                     </div>
-
-                    <div className="debrief-actions">
-                      <button
-                        className="button button--primary"
-                        onClick={saveSimToJournal}
-                        disabled={!simCommitment.trim() && !simReflection.trim()}
-                      >
-                        Save to journal
-                      </button>
-                      <button className="button button--ghost" onClick={() => resetSimulator()}>Replay</button>
-                      <button className="button button--ghost" onClick={() => resetSimulator(nextScenarioId)}>Next scenario</button>
-                    </div>
+                  )}
+                  <div className="sim-scores-inline">
+                    {Object.entries(simulatorScores).map(([key, value]) => (
+                      <div key={key} className="sim-score-row">
+                        <span className="sim-score-label">{key}</span>
+                        <div className="sim-score-track"><div className="sim-score-fill" style={{ width: `${value}%` }} /></div>
+                        <span className="sim-score-val">{value}</span>
+                      </div>
+                    ))}
                   </div>
-                ) : (
-                  <>
-                    {simulatorResponse && (
-                      <div className="simulator-response"><span>What happened</span><p>{simulatorResponse}</p></div>
-                    )}
-                    {simulatorNode && (
-                      <>
-                        <h3 className="simulator-prompt">{simulatorNode.prompt}</h3>
-                        <div className="simulator-choices">
-                          {simulatorNode.choices.map((choice) => (
-                            <button key={choice.id} onClick={() => chooseSimulatorOption(choice)}>{choice.label}</button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </>
-                )}
-              </article>
-
-              <aside className="panel outcome-panel">
-                <div className="panel__heading"><div><span className="section-kicker">Simulated effects</span><h2>Team system</h2></div></div>
-                {Object.entries(simulatorScores).map(([key, value]) => (
-                  <div className="outcome-meter" key={key}>
-                    <div><span>{key}</span><strong>{value}</strong></div>
-                    <div><i className={value >= 65 ? "" : value >= 45 ? "mid" : "low"} style={{ width: `${value}%` }} /></div>
-                  </div>
-                ))}
-                <div className="insight-card"><strong>Interpretation</strong><p>Clarity and delivery can rise while trust and accountability fall. The simulator makes those trade-offs visible instead of rewarding only immediate output.</p></div>
-              </aside>
+                </div>
+              )}
             </div>
 
-            {/* Assessment-first gateway: show wizard hero if baseline not done */}
-            {!baselineDone && !showAssessmentInPractice && (
+            {!baselineDone && (
               <div className="journey-gateway">
                 <div className="journey-gateway__text">
-                  <span className="section-kicker">Step 1 of 3</span>
+                  <span className="section-kicker">Step 1 of 2</span>
                   <h2>Discover your baseline style</h2>
                   <p>Six scenarios. Choose what you'd genuinely do first — not the theoretically correct answer. Takes about 2 minutes.</p>
                 </div>
-                <button className="button button--primary button--wide" onClick={() => { setShowAssessmentInPractice(true); setAssessmentStep(1); }}>
+                <button className="button button--primary button--wide" onClick={() => setVisitState("wizard")}>
                   Start baseline assessment
                 </button>
               </div>
             )}
 
-            {baselineDone && !showAssessmentInPractice && (
+            {baselineDone && (
               <div className="baseline-set-banner">
                 <span>✓ Baseline set</span>
-                <button className="text-button" onClick={() => { setShowAssessmentInPractice(true); setAssessmentStep(1); }}>Redo assessment</button>
-              </div>
-            )}
-
-            {showAssessmentInPractice && (
-              <div className="assessment-wizard">
-                {assessmentStep === 0 && (
-                  <div className="practice-entry">
-                    <div>
-                      <strong>Baseline style assessment</strong>
-                      <p>Choose what you would genuinely do first, not what sounds theoretically ideal.</p>
-                    </div>
-                    <button className="button button--primary" onClick={() => setAssessmentStep(1)}>Start</button>
-                  </div>
-                )}
-
-                {assessmentStep >= 1 && assessmentStep <= ASSESSMENT_SCENARIOS.length && (() => {
-                  const scenario = ASSESSMENT_SCENARIOS[assessmentStep - 1];
-                  const progressPct = Math.round(((assessmentStep - 1) / ASSESSMENT_SCENARIOS.length) * 100);
-                  return (
-                    <article className="panel assessment-card">
-                      <div className="assessment-progress">
-                        <div className="assessment-progress-bar">
-                          <div className="assessment-progress-bar-fill" style={{ width: `${progressPct}%` }} />
-                        </div>
-                        <span>{assessmentStep} of {ASSESSMENT_SCENARIOS.length}</span>
-                      </div>
-                      <span className="section-kicker">{scenario.title}</span>
-                      <h3>{scenario.prompt}</h3>
-                      <div className="option-list">
-                        {scenario.options.map((option) => (
-                          <label
-                            className={assessmentAnswers[scenario.id] === option.id ? "choice-card choice-card--selected" : "choice-card"}
-                            key={option.id}
-                          >
-                            <input
-                              type="radio"
-                              name={scenario.id}
-                              checked={assessmentAnswers[scenario.id] === option.id}
-                              onChange={() => setAssessmentAnswers((current) => ({ ...current, [scenario.id]: option.id }))}
-                            />
-                            <span><strong>{option.label}</strong><small>{option.rationale}</small></span>
-                          </label>
-                        ))}
-                      </div>
-                      <div className="assessment-nav">
-                        <button
-                          className="button button--ghost"
-                          onClick={() => setAssessmentStep((s) => Math.max(0, s - 1))}
-                        >
-                          {assessmentStep === 1 ? "Cancel" : "Previous"}
-                        </button>
-                        <button
-                          className="button button--primary"
-                          disabled={!assessmentAnswers[scenario.id]}
-                          onClick={() => setAssessmentStep((s) => s + 1)}
-                        >
-                          {assessmentStep < ASSESSMENT_SCENARIOS.length ? "Next" : "See results"}
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })()}
-
-                {assessmentStep > ASSESSMENT_SCENARIOS.length && (
-                  <article className="panel assessment-card">
-                    <div className="assessment-progress">
-                      <div className="assessment-progress-bar">
-                        <div className="assessment-progress-bar-fill" style={{ width: "100%" }} />
-                      </div>
-                      <span>Complete</span>
-                    </div>
-                    <ProfileSummary label="Assessment estimate" title="Emerging natural style" profile={assessmentProfile} />
-                    <div className="assessment-nav">
-                      <button className="button button--ghost" onClick={() => setAssessmentStep(ASSESSMENT_SCENARIOS.length)}>Back</button>
-                      <button
-                        className="button button--primary"
-                        disabled={answeredAssessmentCount < 3}
-                        onClick={() => {
-                          setNaturalProfile({ ...assessmentProfile });
-                          applyWorkingProfile(assessmentProfile, "assessment_result");
-                          void trackEvent("assessment_completed", { answeredCount: answeredAssessmentCount, archetype: getArchetypeCode(assessmentProfile) });
-                          setAssessmentStep(0);
-                          setShowAssessmentInPractice(false);
-                          // No changeTab — stay in Practice, the baseline-set-banner will appear
-                        }}
-                      >
-                        Apply as my natural style
-                      </button>
-                    </div>
-                    {answeredAssessmentCount < 3 && (
-                      <p className="helper-text">Answer at least three scenarios to apply.</p>
-                    )}
-                  </article>
-                )}
-              </div>
-            )}
-
-            {simulatorComplete && (
-              <div className="next-step-card">
-                <div>
-                  <strong>Scenario complete</strong>
-                  <p>Save your reflection above, then log how you apply this in a real situation.</p>
-                </div>
-                <button className="button button--ghost" onClick={() => changeTab("reflect")}>
-                  Go to Reflect →
-                </button>
+                <button className="text-button" onClick={() => setVisitState("wizard")}>Redo assessment</button>
               </div>
             )}
           </section>
@@ -956,7 +739,7 @@ export default function ManagementLab() {
 
         {/* ── MY STYLE TAB ── */}
         {activeTab === "style" && (
-          <section className="tab-stack">
+          <section id="panel-style" role="tabpanel" aria-labelledby="tab-style" className="tab-stack">
             <StylesPage
               natural={naturalProfile}
               working={workingProfile}
@@ -966,7 +749,6 @@ export default function ManagementLab() {
               onEditRecommended={() => setEditingPhase("recommended")}
               onGoToPractice={() => changeTab("practice")}
               onGoToJourney={() => changeTab("journey")}
-              onGoToReflect={() => changeTab("reflect")}
               onShare={() => shareProfile()}
               darkMode={darkMode}
             />
@@ -975,7 +757,7 @@ export default function ManagementLab() {
 
         {/* ── JOURNEY TAB ── */}
         {activeTab === "journey" && (
-          <section className="tab-stack tab-stack--compact journey-tab">
+          <section id="panel-journey" role="tabpanel" aria-labelledby="tab-journey" className="tab-stack tab-stack--compact journey-tab">
 
             {/* Track picker */}
             {!trackProgress && (
@@ -1227,6 +1009,89 @@ export default function ManagementLab() {
                       </div>
                     </>
                   )}
+
+                  {/* Style snapshots */}
+                  <div className="reflect-divider" />
+                  <div className="reflect-section">
+                    <h2 className="reflect-section-heading">Style history</h2>
+                    <div className="two-column-layout">
+                      <article className="panel">
+                        <div className="quick-labels">
+                          {["Before joining the team", "After 30 days", "During a crisis", "After team feedback"].map((label) => (
+                            <button className="preset-chip" key={label} onClick={() => setSnapshotLabel(label)}>{label}</button>
+                          ))}
+                        </div>
+                        <label className="full-field"><span>Snapshot label</span><input value={snapshotLabel} onChange={(event) => setSnapshotLabel(event.target.value)} /></label>
+                        <button className="button button--primary" onClick={saveSnapshot}>Record snapshot</button>
+                        <ProfileSummary label="Will be recorded" title={snapshotLabel || "Current style"} profile={workingProfile} />
+                      </article>
+                      <div className="timeline">
+                        {snapshots.length ? [...snapshots].reverse().map((snapshot, index) => (
+                          <article className="timeline-item" key={snapshot.id}>
+                            <span className="timeline-dot" />
+                            <div className="panel">
+                              <div className="timeline-item__head">
+                                <div><span>{formatDate(snapshot.createdAt)}</span><h3>{snapshot.label}</h3></div>
+                                <button className="text-button text-button--danger" onClick={() => setSnapshots((current) => current.filter((item) => item.id !== snapshot.id))}>Delete</button>
+                              </div>
+                              {snapshot.note && <p>{snapshot.note}</p>}
+                              {index < snapshots.length - 1 && (
+                                <small>Review the largest movements in the radar shape rather than treating any direction as universally better.</small>
+                              )}
+                            </div>
+                          </article>
+                        )) : <EmptyState title="No snapshots yet" body="Record your style at meaningful moments to track how it evolves." />}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Team Perception */}
+                  <div className="reflect-divider" />
+                  <div className="reflect-section">
+                    <details className="team-disclosure">
+                      <summary>
+                        <span>Team Perception <span className="count-badge" style={{ marginLeft: 8 }}>{perceptions.length} responses</span></span>
+                        <span style={{ fontSize: "0.75rem", color: "var(--ink-soft)" }}>▼</span>
+                      </summary>
+                      <div className="team-disclosure-body">
+                        <div className="two-column-layout">
+                          <article className="panel">
+                            <div className="panel__heading"><div><h2>How does this manager feel in practice?</h2></div></div>
+                            <label className="full-field"><span>Relationship context</span>
+                              <select value={relationship} onChange={(event) => setRelationship(event.target.value)}>
+                                <option>Team member</option><option>Peer</option><option>Direct manager</option><option>Cross-functional partner</option>
+                              </select>
+                            </label>
+                            <ProfileSliders profile={perceptionDraft} onChange={setPerceptionDraft} compact />
+                            <button className="button button--primary" onClick={addPerception}>Add anonymous response</button>
+                          </article>
+                          <div className="stacked-column">
+                            {teamAverage ? (
+                              <>
+                                <div className="profile-comparison-grid profile-comparison-grid--two">
+                                  <ProfileSummary label="Self view" title="Current working style" profile={workingProfile} />
+                                  <ProfileSummary label={`${perceptions.length} response average`} title="Team experience" profile={teamAverage} comparison={workingProfile} />
+                                </div>
+                                <article className="panel">
+                                  <div className="panel__heading"><div><h2>Where intent and experience differ</h2></div></div>
+                                  <div className="gap-list">
+                                    {perceptionGaps.map((gap) => (
+                                      <div className="gap-row" key={gap.key}>
+                                        <div><strong>{gap.name}</strong><small>Experienced as more {gap.experiencedAs.toLowerCase()}</small></div>
+                                        <span>Self {gap.self}</span><b>{gap.gap > 0 ? `+${gap.gap}` : gap.gap}</b><span>Team {gap.team}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <button className="text-button text-button--danger" onClick={() => setPerceptions([])}>Clear local responses</button>
+                                </article>
+                              </>
+                            ) : <EmptyState title="No team responses yet" body="Add at least one response to compare." />}
+                          </div>
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+
                 </>
               );
             })()}
@@ -1235,181 +1100,8 @@ export default function ManagementLab() {
 
         {/* ── ARCHETYPES TAB ── */}
         {activeTab === "archetypes" && (
-          <section className="tab-stack tab-stack--compact">
+          <section id="panel-archetypes" role="tabpanel" aria-labelledby="tab-archetypes" className="tab-stack tab-stack--compact">
             <ArchetypesPage darkMode={darkMode} />
-          </section>
-        )}
-
-        {/* ── REFLECT TAB ── */}
-        {activeTab === "reflect" && (
-          <section className="tab-stack">
-
-            {/* Decision Journal — primary action */}
-            <div className="reflect-section">
-              <div className="reflect-hero">
-                <span className="section-kicker">Step 3 of 3</span>
-                <h2>Log a real decision</h2>
-                <p>Close the loop: what did you try, and what happened?</p>
-              </div>
-              <div className="section-heading-slim">
-                <h2 className="reflect-section-heading">Decision Journal</h2>
-                <span className="count-badge">{journal.length} decisions</span>
-              </div>
-              <div className="two-column-layout">
-                <article className="panel journal-form">
-                  <div className="journal-quick-form">
-                    <div>
-                      <span style={{ display: "block", marginBottom: 8, color: "var(--ink-soft)", fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.03em", textTransform: "uppercase" }}>What happened?</span>
-                      <div className="situation-chips">
-                        {JOURNAL_SITUATIONS.map((s) => (
-                          <button
-                            key={s}
-                            className={`situation-chip${journalForm.situation === s ? " situation-chip--active" : ""}`}
-                            onClick={() => setJournalForm((f) => ({ ...f, situation: f.situation === s ? "" : s }))}
-                          >
-                            {s}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <span style={{ display: "block", marginBottom: 8, color: "var(--ink-soft)", fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.03em", textTransform: "uppercase" }}>How did it go?</span>
-                      <div className="outcome-selector">
-                        {[
-                          { id: "worked", icon: "↑", label: "Worked" },
-                          { id: "mixed", icon: "→", label: "Mixed" },
-                          { id: "didnt-work", icon: "↓", label: "Didn't work" },
-                        ].map(({ id, icon, label }) => (
-                          <button
-                            key={id}
-                            className={`outcome-btn outcome-btn--${id}${journalForm.outcome === id ? " outcome-btn--selected" : ""}`}
-                            onClick={() => setJournalForm((f) => ({ ...f, outcome: f.outcome === id ? "" : id }))}
-                          >
-                            <span>{icon}</span>
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <label className="full-field" style={{ margin: 0 }}>
-                      <span>What would you change? (optional)</span>
-                      <textarea
-                        value={journalForm.reflection}
-                        onChange={(e) => setJournalForm((f) => ({ ...f, reflection: e.target.value }))}
-                        placeholder="One thing to try differently next time."
-                        rows={2}
-                      />
-                    </label>
-                    <button className="button button--primary" onClick={addJournalEntry} disabled={!journalForm.situation.trim()}>Log it</button>
-                  </div>
-                </article>
-                <div className="journal-list">
-                  {journal.length ? journal.map((entry) => (
-                    <article className="panel journal-entry" key={entry.id}>
-                      <div className="timeline-item__head">
-                        <div><span>{formatDate(entry.createdAt)}</span><h3>{entry.situation}</h3></div>
-                        <button className="text-button text-button--danger" onClick={() => setJournal((current) => current.filter((item) => item.id !== entry.id))}>Delete</button>
-                      </div>
-                      {entry.chosenStyle && <p><strong>{entry.chosenStyle}</strong></p>}
-                      {entry.reflection && <p style={{ color: "var(--ink-soft)" }}>{entry.reflection}</p>}
-                    </article>
-                  )) : <EmptyState title="No decisions recorded" body="Tap a situation above and log what happened." />}
-                </div>
-              </div>
-            </div>
-
-            {journal.length > 0 && (
-              <div className="next-step-card next-step-card--complete">
-                <span>✓ Loop complete</span>
-                <p>Practice another scenario to keep building.</p>
-                <button className="button button--ghost" onClick={() => changeTab("practice")}>Back to Practice →</button>
-              </div>
-            )}
-
-            <div className="reflect-divider" />
-
-            {/* History */}
-            <div className="reflect-section">
-              <h2 className="reflect-section-heading">History</h2>
-              <div className="two-column-layout">
-                <article className="panel">
-                  <div className="quick-labels">
-                    {["Before joining the team", "After 30 days", "During a crisis", "After team feedback"].map((label) => (
-                      <button className="preset-chip" key={label} onClick={() => setSnapshotLabel(label)}>{label}</button>
-                    ))}
-                  </div>
-                  <label className="full-field"><span>Snapshot label</span><input value={snapshotLabel} onChange={(event) => setSnapshotLabel(event.target.value)} /></label>
-                  <button className="button button--primary" onClick={saveSnapshot}>Record snapshot</button>
-                  <ProfileSummary label="Will be recorded" title={snapshotLabel || "Current style"} profile={workingProfile} />
-                </article>
-                <div className="timeline">
-                  {snapshots.length ? [...snapshots].reverse().map((snapshot, index) => (
-                    <article className="timeline-item" key={snapshot.id}>
-                      <span className="timeline-dot" />
-                      <div className="panel">
-                        <div className="timeline-item__head">
-                          <div><span>{formatDate(snapshot.createdAt)}</span><h3>{snapshot.label}</h3></div>
-                          <button className="text-button text-button--danger" onClick={() => setSnapshots((current) => current.filter((item) => item.id !== snapshot.id))}>Delete</button>
-                        </div>
-                        {snapshot.note && <p>{snapshot.note}</p>}
-                        {index < snapshots.length - 1 && (
-                          <small>Compared with the previous recorded point, review the largest movements in the radar shape rather than treating any direction as universally better.</small>
-                        )}
-                      </div>
-                    </article>
-                  )) : <EmptyState title="No snapshots yet" body="Record your style at meaningful moments to track how it evolves." />}
-                </div>
-              </div>
-            </div>
-
-            <div className="reflect-divider" />
-
-            {/* Team Perception */}
-            <div className="reflect-section">
-              <details className="team-disclosure">
-                <summary>
-                  <span>Team Perception <span className="count-badge" style={{ marginLeft: 8 }}>{perceptions.length} responses</span></span>
-                  <span style={{ fontSize: "0.75rem", color: "var(--ink-soft)" }}>▼</span>
-                </summary>
-                <div className="team-disclosure-body">
-                  <div className="two-column-layout">
-                    <article className="panel">
-                      <div className="panel__heading"><div><h2>How does this manager feel in practice?</h2></div></div>
-                      <label className="full-field"><span>Relationship context</span>
-                        <select value={relationship} onChange={(event) => setRelationship(event.target.value)}>
-                          <option>Team member</option><option>Peer</option><option>Direct manager</option><option>Cross-functional partner</option>
-                        </select>
-                      </label>
-                      <ProfileSliders profile={perceptionDraft} onChange={setPerceptionDraft} compact />
-                      <button className="button button--primary" onClick={addPerception}>Add anonymous response</button>
-                    </article>
-                    <div className="stacked-column">
-                      {teamAverage ? (
-                        <>
-                          <div className="profile-comparison-grid profile-comparison-grid--two">
-                            <ProfileSummary label="Self view" title="Current working style" profile={workingProfile} />
-                            <ProfileSummary label={`${perceptions.length} response average`} title="Team experience" profile={teamAverage} comparison={workingProfile} />
-                          </div>
-                          <article className="panel">
-                            <div className="panel__heading"><div><h2>Where intent and experience differ</h2></div></div>
-                            <div className="gap-list">
-                              {perceptionGaps.map((gap) => (
-                                <div className="gap-row" key={gap.key}>
-                                  <div><strong>{gap.name}</strong><small>Experienced as more {gap.experiencedAs.toLowerCase()}</small></div>
-                                  <span>Self {gap.self}</span><b>{gap.gap > 0 ? `+${gap.gap}` : gap.gap}</b><span>Team {gap.team}</span>
-                                </div>
-                              ))}
-                            </div>
-                            <button className="text-button text-button--danger" onClick={() => setPerceptions([])}>Clear local responses</button>
-                          </article>
-                        </>
-                      ) : <EmptyState title="No team responses yet" body="Add at least one response to compare." />}
-                    </div>
-                  </div>
-                </div>
-              </details>
-            </div>
-
           </section>
         )}
       </main>
@@ -1418,7 +1110,7 @@ export default function ManagementLab() {
         <aside className="analytics-consent" role="dialog" aria-label="Anonymous analytics preference">
           <div>
             <strong>Help improve LeadShift?</strong>
-            <p>Management answers stay in this browser tab. With permission, LeadShift records anonymous feature-use events and broad value bands—not journal text, team comments, names, employers, or exact slider profiles.</p>
+            <p>Management answers stay in this browser tab. With permission, LeadShift records anonymous feature-use events and broad value bands—not personal notes, team comments, names, employers, or exact slider profiles.</p>
           </div>
           <div className="analytics-consent__actions">
             <button className="button button--ghost" onClick={() => chooseAnalytics("declined")}>No thanks</button>

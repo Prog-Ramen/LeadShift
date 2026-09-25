@@ -55,6 +55,7 @@ export function RadarChart({
         role="img"
         aria-label="Radar chart of the current management style"
       >
+        <title>Management style radar</title>
         {rings.map((ring) => (
           <polygon
             key={ring}
@@ -202,6 +203,7 @@ export function TrackEvolutionRadar({ milestones, selectedIndex, currentIndex, c
           role="img"
           aria-label="Management style evolution across track phases"
         >
+          <title>Style evolution across track phases</title>
           {/* Grid rings */}
           {rings.map((ring) => (
             <polygon
