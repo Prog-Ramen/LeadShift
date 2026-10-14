@@ -666,7 +666,7 @@ export default function ManagementLab() {
         <OnboardingGate
           onNew={() => setVisitState("wizard")}
           onExperienced={handleExperienced}
-          onWizard={() => { setShowTemplateSelection(false); setExperiencedCode(""); setCodeError(""); }}
+          onWizard={() => setVisitState("wizard")}
           showTemplateSelection
           templates={TEMPLATES.map((t) => ({ id: t.id, name: t.name, description: t.description }))}
           onTemplateSelect={handleTemplateSelect}
@@ -678,7 +678,7 @@ export default function ManagementLab() {
       <OnboardingGate
         onNew={() => setVisitState("wizard")}
         onExperienced={handleExperienced}
-        onWizard={() => { setShowTemplateSelection(false); setExperiencedCode(""); setCodeError(""); }}
+        onWizard={() => setVisitState("wizard")}
         showCodeInput
         codeValue={experiencedCode}
         onCodeChange={setExperiencedCode}
